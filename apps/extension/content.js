@@ -187,7 +187,7 @@
     // Floating circular button
     const btn = document.createElement("button");
     btn.id = "guardian-float-btn";
-    btn.innerHTML = "🛡️";
+    btn.innerHTML = `<svg style="width:24px;height:24px;" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>`;
     btn.title = "Guardian Accessibility Companion";
     document.body.appendChild(btn);
 
@@ -196,21 +196,28 @@
     panel.id = "guardian-overlay-panel";
     panel.innerHTML = `
       <div class="guardian-panel-header">
-        <span>🛡️ Guardian Companion</span>
+        <span style="display:flex;align-items:center;gap:6px;">
+          <svg style="width:18px;height:18px;" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+          Guardian Companion
+        </span>
         <span class="guardian-panel-close" id="guardian-close-btn">✕</span>
       </div>
       <div class="guardian-panel-body">
         <button class="guardian-control-btn" id="elderly-toggle-btn">
-          👵 <span>Elderly Mode (Large Text)</span>
+          <svg style="width:16px;height:16px;" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>
+          <span>Elderly Mode (Large Text)</span>
         </button>
         <button class="guardian-control-btn" id="focus-toggle-btn">
-          🔍 <span>Focus Mode (Hide Ads/Bars)</span>
+          <svg style="width:16px;height:16px;" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+          <span>Focus Mode (Hide Ads/Bars)</span>
         </button>
         <button class="guardian-control-btn" id="read-aloud-btn">
-          🔊 <span>Read Page Aloud</span>
+          <svg style="width:16px;height:16px;" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"/></svg>
+          <span>Read Page Aloud</span>
         </button>
         <button class="guardian-control-btn" id="simplify-page-btn">
-          📝 <span>Simplify Content</span>
+          <svg style="width:16px;height:16px;" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+          <span>Simplify Content</span>
         </button>
         <div class="guardian-status-box" id="guardian-status-content">
           <strong>Security Scan:</strong> Safe next steps are active.

@@ -1,11 +1,13 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { ShieldCheck, ShieldAlert, ShieldQuestion, Loader2, ArrowLeft, Volume2, Download } from "lucide-react";
+import { ShieldCheck, ShieldAlert, ShieldQuestion, Loader2, ArrowLeft, Volume2, Download, AlertTriangle, Activity, Mic, Lightbulb } from "lucide-react";
 import type { AnalysisResult } from "@guardian/contracts";
+import { Tooltip, Zoom } from "@mui/material";
+import gsap from "gsap";
 
 const scenarios = [
   {
@@ -13,7 +15,6 @@ const scenarios = [
     title: "Scenario 1: Urgent Scam Message",
     description: "Vulnerable user receives a text warning that their account will be suspended today, demanding an OTP.",
     fixtureKey: "bank-otp",
-    icon: "🚨",
     inputData: { text: "Your bank account will be closed today. Send your OTP now to verify." }
   },
   {
@@ -21,7 +22,6 @@ const scenarios = [
     title: "Scenario 2: Healthcare Prescription",
     description: "An elderly parent receives a handwritten prescription and needs a plain-language translation of dosage instructions.",
     fixtureKey: "amoxicillin-prescription",
-    icon: "💊",
     inputData: { text: "Prescription: Amoxicillin 500mg, take 3 times daily after meals." }
   },
   {
@@ -29,16 +29,27 @@ const scenarios = [
     title: "Scenario 3: Voice Note Verification",
     description: "A grandparent receives a voice message requesting confirmation codes for WhatsApp registration.",
     fixtureKey: "voice-otp",
-    icon: "🎙️",
     inputData: { text: "OTP voice note asking for verification code." }
   }
 ];
+
+const scenarioIcons: Record<string, React.ReactNode> = {
+  scam: <AlertTriangle className="w-8 h-8 text-red-600" />,
+  document: <Activity className="w-8 h-8 text-green-700" />,
+  voice: <Mic className="w-8 h-8 text-blue-600" />
+};
 
 export default function PresentationPage() {
   const [activeScenario, setActiveScenario] = useState<typeof scenarios[0] | null>(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [result, setResult] = useState<AnalysisResult | null>(null);
   const [playingVoice, setPlayingVoice] = useState(false);
+
+  // GSAP Entrance Animations
+  useEffect(() => {
+    gsap.from(".presentation-title", { opacity: 0, y: -20, duration: 0.6, ease: "power2.out" });
+    gsap.from(".presentation-card", { opacity: 0, y: 15, stagger: 0.1, duration: 0.8, delay: 0.15, ease: "power3.out" });
+  }, []);
 
   const runScenario = async (scenario: typeof scenarios[0]) => {
     setActiveScenario(scenario);
@@ -128,7 +139,7 @@ export default function PresentationPage() {
 
       <main className="flex-1 p-4 md:p-8 max-w-6xl mx-auto w-full space-y-8">
         <div>
-          <h1 className="text-3xl font-serif mb-2">Presentation Scenario Hub</h1>
+          <h1 className="text-3xl font-serif mb-2 presentation-title">Presentation Scenario Hub</h1>
           <p className="text-gray-500">Run one-click scenarios to demonstrate Guardian's core safety and translation modules to the judges.</p>
         </div>
 
@@ -137,7 +148,7 @@ export default function PresentationPage() {
           {scenarios.map((scenario) => (
             <Card 
               key={scenario.id} 
-              className={`cursor-pointer transition-all border ${
+              className={`cursor-pointer transition-all border presentation-card ${
                 activeScenario?.id === scenario.id 
                   ? "border-[#087449] ring-2 ring-[#dcefe3]" 
                   : "border-gray-200 hover:border-green-300"
@@ -145,7 +156,7 @@ export default function PresentationPage() {
               onClick={() => runScenario(scenario)}
             >
               <CardHeader className="flex flex-row items-center gap-4 space-y-0">
-                <span className="text-3xl" role="img" aria-hidden="true">{scenario.icon}</span>
+                {scenarioIcons[scenario.id]}
                 <div>
                   <CardTitle className="text-lg font-bold">{scenario.title}</CardTitle>
                   <CardDescription className="text-xs">Prepared Scenario Fixture</CardDescription>
@@ -169,7 +180,7 @@ export default function PresentationPage() {
 
           {!isAnalyzing && !result && (
             <div className="text-center py-12 space-y-3">
-              <span className="text-4xl">💡</span>
+              <Lightbulb className="w-12 h-12 text-yellow-500 mx-auto animate-pulse" />
               <h3 className="text-xl font-serif font-bold">Select a Scenario Above</h3>
               <p className="text-gray-500 max-w-md mx-auto">
                 Click any of the three judge journey cards to run an instant analysis and output Guardian's localized safety response.

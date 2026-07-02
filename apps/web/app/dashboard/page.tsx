@@ -12,6 +12,8 @@ import { Input } from "@/components/ui/input";
 import { MessageSquare, AppWindow, ShieldAlert, ShieldCheck, ShieldQuestion, Globe, Settings, History, ArrowRight, Loader2, Users, Download, FileText, AlertTriangle, CheckCircle2, Upload, ImageIcon } from "lucide-react";
 import { GoogleTranslate } from "@/components/google-translate";
 import type { AnalysisResult } from "@guardian/contracts";
+import { Tooltip, Zoom } from "@mui/material";
+import gsap from "gsap";
 
 const familyMembers = [
   { id: 1, name: "Mama (Mother)", role: "Elderly", status: "Protected", alerts: 2, lastActive: "10 mins ago", device: "WhatsApp Bot" },
@@ -108,6 +110,15 @@ export default function DashboardPage() {
 
     return () => clearInterval(intervalId);
   }, []);
+
+  // GSAP Entrance Animations
+  useEffect(() => {
+    if (userEmail) {
+      gsap.from(".dashboard-title", { opacity: 0, x: -20, duration: 0.6, ease: "power2.out" });
+      gsap.from(".dashboard-tabs-list", { opacity: 0, y: -10, duration: 0.6, delay: 0.1, ease: "power2.out" });
+      gsap.from(".dashboard-card", { opacity: 0, y: 15, stagger: 0.1, duration: 0.8, delay: 0.15, ease: "power3.out" });
+    }
+  }, [userEmail]);
 
   const handleConnectWhatsApp = async () => {
     setWaConnecting(true);
@@ -235,10 +246,10 @@ export default function DashboardPage() {
         <Tabs defaultValue="family" className="w-full">
           <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-4">
             <div>
-              <h1 className="text-3xl mb-1" style={{ fontFamily: "var(--serif)", letterSpacing: "-0.04em", lineHeight: 1.1 }}>Dashboard</h1>
+              <h1 className="text-3xl mb-1 dashboard-title" style={{ fontFamily: "var(--serif)", letterSpacing: "-0.04em", lineHeight: 1.1 }}>Dashboard</h1>
               <p style={{ color: "var(--muted)" }}>Manage your safety and monitor your connected family members.</p>
             </div>
-            <TabsList className="bg-white border shadow-sm p-1 rounded-xl h-auto" style={{ borderColor: "var(--line)" }}>
+            <TabsList className="bg-white border shadow-sm p-1 rounded-xl h-auto dashboard-tabs-list" style={{ borderColor: "var(--line)" }}>
               <TabsTrigger value="family" className="rounded-lg py-2 px-4 data-[state=active]:bg-green-50 data-[state=active]:text-green-800"><Users className="w-4 h-4 mr-2" /> Family Safety</TabsTrigger>
               <TabsTrigger value="scanner" className="rounded-lg py-2 px-4 data-[state=active]:bg-green-50 data-[state=active]:text-green-800"><ShieldCheck className="w-4 h-4 mr-2" /> Manual Scanner</TabsTrigger>
               <TabsTrigger value="data" className="rounded-lg py-2 px-4 data-[state=active]:bg-green-50 data-[state=active]:text-green-800"><FileText className="w-4 h-4 mr-2" /> Export & Reports</TabsTrigger>
@@ -250,7 +261,7 @@ export default function DashboardPage() {
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
               
               <div className="md:col-span-2 space-y-6">
-                <Card className="border-none shadow-sm bg-white">
+                <Card className="border-none shadow-sm bg-white dashboard-card">
                   <CardHeader>
                     <CardTitle className="font-serif text-2xl">Connected Members</CardTitle>
                     <CardDescription>Monitor the digital safety status of your dependents.</CardDescription>
@@ -275,16 +286,20 @@ export default function DashboardPage() {
                             <p className="text-sm font-bold text-gray-800">{member.alerts} Threats Blocked</p>
                             <p className="text-xs text-gray-400">Last active: {member.lastActive}</p>
                           </div>
-                          <Button variant="outline" size="sm">Manage</Button>
+                          <Tooltip title="Configure security alerts and settings">
+                            <Button variant="outline" size="sm">Manage</Button>
+                          </Tooltip>
                         </div>
                       </div>
                     ))}
                     <Dialog>
                       <DialogTrigger
                         render={
-                          <Button variant="outline" className="w-full mt-2 border-dashed border-2 hover:bg-gray-50 text-gray-600 font-bold">
-                            + Invite Family Member
-                          </Button>
+                          <Tooltip title="Generate an invite code to connect a family member">
+                            <Button variant="outline" className="w-full mt-2 border-dashed border-2 hover:bg-gray-50 text-gray-600 font-bold">
+                              + Invite Family Member
+                            </Button>
+                          </Tooltip>
                         }
                       />
                       <DialogContent>
@@ -299,7 +314,7 @@ export default function DashboardPage() {
                   </CardContent>
                 </Card>
 
-                <Card className="border-none shadow-sm bg-white">
+                <Card className="border-none shadow-sm bg-white dashboard-card">
                   <CardHeader>
                     <CardTitle className="font-serif text-xl flex items-center gap-2"><History className="w-5 h-5" /> Threat Interception Log</CardTitle>
                   </CardHeader>
@@ -323,7 +338,7 @@ export default function DashboardPage() {
               </div>
 
               <div className="space-y-6">
-                <Card className="border-none shadow-sm bg-white bg-gradient-to-br from-green-50 to-white">
+                <Card className="border-none shadow-sm bg-white bg-gradient-to-br from-green-50 to-white dashboard-card">
                   <CardHeader>
                     <CardTitle className="font-serif text-xl flex items-center gap-2">
                       <MessageSquare className="w-5 h-5 text-green-600" /> WhatsApp Integration
@@ -401,21 +416,25 @@ export default function DashboardPage() {
                           />
                         </div>
                         
-                        <Button 
-                          onClick={handleConnectWhatsApp}
-                          disabled={!waPhoneNumber.trim() || waConnecting}
-                          className="w-full bg-green-600 hover:bg-green-700 text-white font-bold"
-                        >
-                          {waConnecting ? (
-                            <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Generating Code...</>
-                          ) : "Request Pairing Code"}
-                        </Button>
+                        <Tooltip title="Link a phone number to get pairing credentials">
+                          <span>
+                            <Button 
+                              onClick={handleConnectWhatsApp}
+                              disabled={!waPhoneNumber.trim() || waConnecting}
+                              className="w-full bg-green-600 hover:bg-green-700 text-white font-bold"
+                            >
+                              {waConnecting ? (
+                                <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Generating Code...</>
+                              ) : "Request Pairing Code"}
+                            </Button>
+                          </span>
+                        </Tooltip>
                       </div>
                     )}
                   </CardContent>
                 </Card>
 
-                <Card className="border-none shadow-sm bg-white bg-gradient-to-br from-blue-50 to-white">
+                <Card className="border-none shadow-sm bg-white bg-gradient-to-br from-blue-50 to-white dashboard-card">
                   <CardHeader>
                     <CardTitle className="font-serif text-xl flex items-center gap-2"><Globe className="w-5 h-5 text-blue-600" /> Browser Extension</CardTitle>
                     <CardDescription>Block phishing links automatically.</CardDescription>
@@ -426,7 +445,9 @@ export default function DashboardPage() {
                     <Dialog>
                       <DialogTrigger
                         render={
-                          <Button className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold">Install Extension</Button>
+                          <Tooltip title="Download extension files for manual install">
+                            <Button className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold">Install Extension</Button>
+                          </Tooltip>
                         }
                       />
                       <DialogContent>
@@ -466,7 +487,7 @@ export default function DashboardPage() {
           {/* MANUAL SCANNER TAB */}
           <TabsContent value="scanner" className="animate-in fade-in duration-500 grid grid-cols-1 lg:grid-cols-3 gap-8">
             <div className="lg:col-span-2 space-y-6">
-              <div className="bg-white p-6 md:p-8 rounded-2xl border shadow-sm" style={{ borderColor: "var(--line)" }}>
+              <div className="bg-white p-6 md:p-8 rounded-2xl border shadow-sm dashboard-card" style={{ borderColor: "var(--line)" }}>
                 <div className="mb-6">
                   <h2 className="text-2xl font-serif mb-2">Guardian Analysis Tool</h2>
                   <p style={{ color: "var(--muted)" }}>Paste a suspicious message, upload a document image, or drop a file to get an instant safety check.</p>
@@ -476,7 +497,11 @@ export default function DashboardPage() {
                   <TabsList className="grid w-full grid-cols-3 mb-6 bg-gray-50 p-1 rounded-xl">
                     <TabsTrigger value="text" className="rounded-lg">Paste Text</TabsTrigger>
                     <TabsTrigger value="image" className="rounded-lg">Upload Image</TabsTrigger>
-                    <TabsTrigger value="voice" disabled className="rounded-lg opacity-50">Voice Note</TabsTrigger>
+                    <Tooltip title="Voice analysis is processed automatically via WhatsApp Bot notes">
+                      <span className="flex-1">
+                        <TabsTrigger value="voice" disabled className="rounded-lg opacity-50 w-full">Voice Note</TabsTrigger>
+                      </span>
+                    </Tooltip>
                   </TabsList>
                   
                   <TabsContent value="text" className="space-y-4">
