@@ -7,7 +7,9 @@
     "packages/*"
   ],
   "scripts": {
-    "dev": "bun --cwd apps/web dev",
+    "dev:web": "bun --cwd apps/web dev",
+    "dev:api": "bun --cwd apps/api dev",
+    "dev": "bun run dev:api & bun run dev:web",
     "build": "bun --cwd apps/web build",
     "lint": "bun --cwd apps/web lint"
   }

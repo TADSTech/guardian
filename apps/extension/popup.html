@@ -10,6 +10,7 @@
       margin: 0;
       padding: 16px;
       color: #1f2937;
+      background-color: #fffcf5;
     }
     .header {
       display: flex;
@@ -23,12 +24,12 @@
       font-weight: 900;
       letter-spacing: -0.05em;
       font-size: 1.2rem;
-      color: #111827;
+      color: #064e3b;
       text-transform: uppercase;
     }
     .badge {
-      background: #fef08a;
-      color: #854d0e;
+      background: #dcefe3;
+      color: #064e3b;
       font-size: 0.7rem;
       font-weight: bold;
       padding: 2px 6px;
@@ -72,30 +73,43 @@
       padding: 10px;
       border-radius: 6px;
       font-size: 0.8rem;
-      margin-top: 16px;
+      margin-top: 12px;
       font-weight: 500;
     }
     .action-btn {
       display: block;
       width: 100%;
-      background: #111827;
+      background: #064e3b;
       color: white;
       border: none;
       padding: 10px;
       border-radius: 6px;
       font-weight: bold;
-      margin-top: 16px;
+      margin-top: 8px;
       cursor: pointer;
+      font-size: 0.85rem;
+      transition: background 0.2s;
     }
     .action-btn:hover {
-      background: #374151;
+      opacity: 0.9;
+    }
+    .btn-secondary {
+      background: #0f172a;
+    }
+    .btn-outline {
+      background: transparent;
+      color: #064e3b;
+      border: 1px solid #064e3b;
+    }
+    .btn-outline:hover {
+      background: #f4f6f3;
     }
   </style>
 </head>
 <body>
   <div class="header">
     <div class="brand">GUARDIAN</div>
-    <div class="badge">DEMO BUILD</div>
+    <div class="badge">COMPANION</div>
   </div>
 
   <div class="status" id="status-panel">
@@ -110,10 +124,12 @@
   </div>
 
   <div class="warning">
-    <strong>Note:</strong> This extension is a limited hackathon build. Phishing detection highlights trigger words in red.
+    <strong>Elderly & Focus tools:</strong> Click the green 🛡️ button on the bottom right of the page for full inline controls, or toggle modes below.
   </div>
 
-  <button class="action-btn" id="scan-btn">Force Re-scan Page</button>
+  <button class="action-btn" id="elderly-btn">👵 Toggle Elderly Mode</button>
+  <button class="action-btn btn-secondary" id="focus-btn">🔍 Toggle Focus Mode</button>
+  <button class="action-btn btn-outline" id="scan-btn">Force Re-scan Page</button>
 
   <script src="popup.js"></script>
 </body>

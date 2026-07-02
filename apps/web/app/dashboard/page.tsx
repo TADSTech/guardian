@@ -8,8 +8,10 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, Di
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
+import { Input } from "@/components/ui/input";
 import { MessageSquare, AppWindow, ShieldAlert, ShieldCheck, ShieldQuestion, Globe, Settings, History, ArrowRight, Loader2, Users, Download, FileText, AlertTriangle, CheckCircle2, Upload, ImageIcon } from "lucide-react";
 import { GoogleTranslate } from "@/components/google-translate";
+import type { AnalysisResult } from "@guardian/contracts";
 
 const familyMembers = [
   { id: 1, name: "Mama (Mother)", role: "Elderly", status: "Protected", alerts: 2, lastActive: "10 mins ago", device: "WhatsApp Bot" },
@@ -29,14 +31,6 @@ const recentScans = [
   { id: 3, type: "Voice Note", excerpt: "Hello, this is customer service. We need your BVN...", risk: "High Risk", date: "2 days ago" },
 ];
 
-const aiResponses = [
-  { level: "Safe", icon: <ShieldCheck className="text-green-600 w-6 h-6" />, color: "bg-green-100 text-green-800", text: "This message appears completely safe. It uses standard language and does not ask for sensitive information." },
-  { level: "Low Risk", icon: <ShieldQuestion className="text-yellow-600 w-6 h-6" />, color: "bg-yellow-100 text-yellow-800", text: "This looks mostly safe, but always verify the sender before clicking links or sharing details." },
-  { level: "Suspicious", icon: <ShieldAlert className="text-orange-500 w-6 h-6" />, color: "bg-orange-100 text-orange-800", text: "Be careful. This message creates a false sense of urgency. Take a moment to verify directly with the company." },
-  { level: "High Risk", icon: <ShieldAlert className="text-red-500 w-6 h-6" />, color: "bg-red-100 text-red-800", text: "Warning: This message asks for your OTP or password. Legitimate organizations will never ask for this." },
-  { level: "Critical", icon: <ShieldAlert className="text-red-700 w-6 h-6" />, color: "bg-red-200 text-red-900", text: "DO NOT CLICK. This is a known scam pattern designed to steal your money. Delete immediately." },
-];
-
 export default function DashboardPage() {
   const router = useRouter();
   const [userEmail, setUserEmail] = useState<string | null>(null);
@@ -45,9 +39,37 @@ export default function DashboardPage() {
   const [scanImage, setScanImage] = useState<File | null>(null);
   const [scanImagePreview, setScanImagePreview] = useState<string | null>(null);
   const [isScanning, setIsScanning] = useState(false);
-  const [scanResult, setScanResult] = useState<typeof aiResponses[0] | null>(null);
+  const [scanResult, setScanResult] = useState<AnalysisResult | null>(null);
 
   const [exportState, setExportState] = useState<"idle" | "loading" | "error">("idle");
+
+  // Scans history state
+  const [scansHistory, setScansHistory] = useState<any[]>(recentScans);
+
+  // WhatsApp Bot connection states
+  const [waStatus, setWaStatus] = useState<string>("DISCONNECTED");
+  const [waQr, setWaQr] = useState<string | null>(null);
+  const [waPairingCode, setWaPairingCode] = useState<string | null>(null);
+  const [waPhoneNumber, setWaPhoneNumber] = useState<string>("");
+  const [waConnecting, setWaConnecting] = useState<boolean>(false);
+
+  const fetchScansHistory = async () => {
+    try {
+      const res = await fetch("http://localhost:5000/v1/analyze/history");
+      if (res.ok) {
+        const data = await res.json();
+        if (data && data.length > 0) {
+          setScansHistory(data);
+        }
+      }
+    } catch (err) {
+      console.error("Failed to fetch scan history", err);
+    }
+  };
+
+  useEffect(() => {
+    fetchScansHistory();
+  }, []);
 
   useEffect(() => {
     const session = localStorage.getItem("guardian_user");
@@ -63,22 +85,123 @@ export default function DashboardPage() {
     }
   }, [router]);
 
+  // Poll WhatsApp status
+  useEffect(() => {
+    let intervalId: any;
+    
+    const checkStatus = async () => {
+      try {
+        const res = await fetch("http://localhost:5000/v1/whatsapp/status");
+        if (res.ok) {
+          const data = await res.json();
+          setWaStatus(data.status);
+          setWaQr(data.qr);
+          setWaPairingCode(data.pairingCode);
+        }
+      } catch (err) {
+        console.error("Failed to fetch WhatsApp status", err);
+      }
+    };
+
+    checkStatus();
+    intervalId = setInterval(checkStatus, 3000);
+
+    return () => clearInterval(intervalId);
+  }, []);
+
+  const handleConnectWhatsApp = async () => {
+    setWaConnecting(true);
+    try {
+      const res = await fetch("http://localhost:5000/v1/whatsapp/connect", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ phoneNumber: waPhoneNumber }),
+      });
+      if (res.ok) {
+        // Fetch status immediately to show state change
+        const statusRes = await fetch("http://localhost:5000/v1/whatsapp/status");
+        if (statusRes.ok) {
+          const statusData = await statusRes.json();
+          setWaStatus(statusData.status);
+          setWaQr(statusData.qr);
+          setWaPairingCode(statusData.pairingCode);
+        }
+      }
+    } catch (err) {
+      console.error("Failed to connect WhatsApp", err);
+    } finally {
+      setWaConnecting(false);
+    }
+  };
+
+  const handleDisconnectWhatsApp = async () => {
+    try {
+      const res = await fetch("http://localhost:5000/v1/whatsapp/disconnect", {
+        method: "POST",
+      });
+      if (res.ok) {
+        setWaStatus("DISCONNECTED");
+        setWaQr(null);
+        setWaPairingCode(null);
+      }
+    } catch (err) {
+      console.error("Failed to disconnect WhatsApp", err);
+    }
+  };
+
   const handleLogout = () => {
     localStorage.removeItem("guardian_user");
     router.push("/");
   };
 
-  const handleScan = (source: "text" | "image" = "text") => {
+  const handleScan = async (source: "text" | "image" = "text") => {
     if (source === "text" && !scanInput.trim()) return;
     if (source === "image" && !scanImage) return;
     setIsScanning(true);
     setScanResult(null);
     
-    setTimeout(() => {
-      const randomIndex = Math.floor(Math.random() * aiResponses.length);
-      setScanResult(aiResponses[randomIndex]);
+    try {
+      let fixtureKey: string | undefined = undefined;
+      const normalizedInput = scanInput.toLowerCase();
+      if (normalizedInput.includes("bvn") || normalizedInput.includes("otp") || normalizedInput.includes("prize")) {
+        fixtureKey = "bank-otp";
+      } else if (normalizedInput.includes("amoxicillin") || normalizedInput.includes("prescription")) {
+        fixtureKey = "amoxicillin-prescription";
+      }
+
+      const endpoint = source === "image" ? "document" : "scam";
+      const res = await fetch(`http://localhost:5000/v1/analyze/${endpoint}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          kind: endpoint,
+          fixtureKey,
+          input: {
+            text: scanInput,
+            fileName: scanImage ? scanImage.name : undefined
+          }
+        })
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setScanResult(data);
+        fetchScansHistory();
+      } else {
+        throw new Error("API returned non-200 response");
+      }
+    } catch (err) {
+      console.error("Scan failed", err);
+      setScanResult({
+        kind: source === "image" ? "document" : "scam",
+        riskLevel: "medium",
+        explanation: "API could not be reached. Automated Local Fallback: Treat this text with caution and do not share details until verified.",
+        evidence: ["API connection offline"],
+        actions: ["Do not share credentials/OTPs.", "Verify sender details directly."],
+        disclaimer: "Guardian local offline fallback summary."
+      });
+    } finally {
       setIsScanning(false);
-    }, 1500);
+    }
   };
 
   const handleExport = () => {
@@ -87,6 +210,7 @@ export default function DashboardPage() {
       setExportState("error");
     }, 2500);
   };
+
 
   if (!userEmail) return null;
 
@@ -201,33 +325,93 @@ export default function DashboardPage() {
               <div className="space-y-6">
                 <Card className="border-none shadow-sm bg-white bg-gradient-to-br from-green-50 to-white">
                   <CardHeader>
-                    <CardTitle className="font-serif text-xl flex items-center gap-2"><MessageSquare className="w-5 h-5 text-green-600" /> WhatsApp Integration</CardTitle>
+                    <CardTitle className="font-serif text-xl flex items-center gap-2">
+                      <MessageSquare className="w-5 h-5 text-green-600" /> WhatsApp Integration
+                    </CardTitle>
                     <CardDescription>Guardian works where your family already communicates.</CardDescription>
                   </CardHeader>
-                  <CardContent>
-                    <p className="text-sm text-gray-600 mb-4">Connect the Guardian WhatsApp bot to an elderly parent's phone. They can forward any suspicious message to the bot to get an instant safety check in their native language.</p>
-                    <Dialog>
-                      <DialogTrigger
-                        render={
-                          <Button className="w-full bg-green-600 hover:bg-green-700 text-white font-bold">Connect WhatsApp Bot</Button>
-                        }
-                      />
-                      <DialogContent>
-                        <DialogHeader>
-                          <DialogTitle className="flex items-center gap-2"><MessageSquare className="w-5 h-5 text-green-600"/> WhatsApp Bot Connected</DialogTitle>
-                          <DialogDescription>
-                            Normally, this would prompt a QR code scan. For this hackathon demo, you can test the flow by texting the bot directly.
-                          </DialogDescription>
-                        </DialogHeader>
-                        <div className="py-4 space-y-4">
-                          <div className="p-4 bg-green-50 text-green-900 border border-green-200 rounded-lg text-sm">
-                            <strong>Demo Phone Number:</strong> +1 (555) 019-8372<br/>
-                            <strong>Activation Code:</strong> GRD-2938
-                          </div>
-                          <p className="text-sm text-gray-600">Send the activation code to the number above on WhatsApp to link a device.</p>
+                  <CardContent className="space-y-4">
+                    <p className="text-sm text-gray-600">
+                      Connect the Guardian WhatsApp bot to an elderly parent's phone. They can forward any suspicious message to the bot to get an instant safety check.
+                    </p>
+
+                    {waStatus === "CONNECTED" && (
+                      <div className="p-4 bg-green-100 border border-green-200 rounded-xl space-y-3">
+                        <div className="flex items-center gap-2 text-green-800 font-bold text-sm">
+                          <span className="w-3.5 h-3.5 rounded-full bg-green-600 animate-pulse" />
+                          Bot Status: Connected & Active
                         </div>
-                      </DialogContent>
-                    </Dialog>
+                        <p className="text-xs text-green-700">
+                          The WhatsApp bot is now ready. Try forwarding a message to it on WhatsApp!
+                        </p>
+                        <Button 
+                          variant="destructive" 
+                          size="sm" 
+                          onClick={handleDisconnectWhatsApp}
+                          className="w-full font-bold"
+                        >
+                          Disconnect Bot
+                        </Button>
+                      </div>
+                    )}
+
+                    {waStatus === "CONNECTING" && (
+                      <div className="p-4 bg-yellow-50 border border-yellow-200 rounded-xl space-y-3 text-sm">
+                        <div className="flex items-center gap-2 text-yellow-800 font-bold">
+                          <Loader2 className="w-4 h-4 animate-spin text-yellow-600" />
+                          Status: Connecting...
+                        </div>
+                        
+                        {waPairingCode ? (
+                          <div className="space-y-2">
+                            <p className="text-xs text-yellow-700 font-medium">
+                              Enter this code on your WhatsApp Web Link Device screen:
+                            </p>
+                            <div className="p-3 bg-white border border-yellow-200 rounded-lg text-center font-mono text-xl font-extrabold tracking-widest text-yellow-900 select-all">
+                              {waPairingCode}
+                            </div>
+                          </div>
+                        ) : (
+                          <p className="text-xs text-yellow-700">
+                            Waiting for WhatsApp to generate pairing credentials...
+                          </p>
+                        )}
+
+                        <Button 
+                          variant="outline" 
+                          size="sm" 
+                          onClick={handleDisconnectWhatsApp}
+                          className="w-full font-bold"
+                        >
+                          Cancel Connection
+                        </Button>
+                      </div>
+                    )}
+
+                    {waStatus === "DISCONNECTED" && (
+                      <div className="space-y-3">
+                        <div className="space-y-1">
+                          <label className="text-xs font-bold text-gray-500 uppercase">Parent's Phone Number</label>
+                          <Input 
+                            type="text" 
+                            placeholder="e.g. +2348012345678" 
+                            value={waPhoneNumber}
+                            onChange={(e) => setWaPhoneNumber(e.target.value)}
+                            className="bg-white rounded-lg border-gray-300"
+                          />
+                        </div>
+                        
+                        <Button 
+                          onClick={handleConnectWhatsApp}
+                          disabled={!waPhoneNumber.trim() || waConnecting}
+                          className="w-full bg-green-600 hover:bg-green-700 text-white font-bold"
+                        >
+                          {waConnecting ? (
+                            <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Generating Code...</>
+                          ) : "Request Pairing Code"}
+                        </Button>
+                      </div>
+                    )}
                   </CardContent>
                 </Card>
 
@@ -388,17 +572,71 @@ export default function DashboardPage() {
               </div>
 
               {scanResult && (
-                <div className="bg-white p-6 md:p-8 rounded-2xl border shadow-lg border-t-4 animate-in fade-in slide-in-from-bottom-4 duration-500" style={{ borderTopColor: scanResult.level.includes("Safe") ? "#16a34a" : scanResult.level.includes("Risk") || scanResult.level === "Critical" ? "#dc2626" : "#f59e0b" }}>
+                <div 
+                  className="bg-white p-6 md:p-8 rounded-2xl border shadow-lg border-t-4 animate-in fade-in slide-in-from-bottom-4 duration-500" 
+                  style={{ 
+                    borderTopColor: 
+                      scanResult.riskLevel === "low" ? "#16a34a" : 
+                      scanResult.riskLevel === "medium" ? "#f59e0b" : 
+                      "#dc2626" 
+                  }}
+                >
                   <div className="flex items-start gap-4">
-                    <div className={`p-3 rounded-2xl ${scanResult.color}`}>
-                      {scanResult.icon}
+                    <div className={`p-3 rounded-2xl ${
+                      scanResult.riskLevel === "low" ? "bg-green-100 text-green-800" : 
+                      scanResult.riskLevel === "medium" ? "bg-yellow-100 text-yellow-800" : 
+                      "bg-red-100 text-red-800"
+                    }`}>
+                      {scanResult.riskLevel === "low" ? (
+                        <ShieldCheck className="w-6 h-6" />
+                      ) : scanResult.riskLevel === "medium" ? (
+                        <ShieldQuestion className="w-6 h-6" />
+                      ) : (
+                        <ShieldAlert className="w-6 h-6" />
+                      )}
                     </div>
-                    <div>
+                    <div className="flex-1">
                       <div className="flex items-center gap-3 mb-1">
                         <h3 className="text-xl font-serif font-bold">Guardian Summary</h3>
-                        <Badge variant="outline" className={`border-none font-bold ${scanResult.color}`}>{scanResult.level}</Badge>
+                        <Badge 
+                          variant="outline" 
+                          className={`border-none font-bold ${
+                            scanResult.riskLevel === "low" ? "bg-green-100 text-green-800" : 
+                            scanResult.riskLevel === "medium" ? "bg-yellow-100 text-yellow-800" : 
+                            "bg-red-100 text-red-800"
+                          }`}
+                        >
+                          {(scanResult.riskLevel || "unknown").toUpperCase()} RISK
+                        </Badge>
                       </div>
-                      <p className="text-gray-700 text-lg leading-relaxed mt-3">{scanResult.text}</p>
+                      
+                      <p className="text-gray-700 text-lg leading-relaxed mt-3">{scanResult.explanation}</p>
+                      
+                      {scanResult.evidence && scanResult.evidence.length > 0 && (
+                        <div className="mt-4">
+                          <h4 className="font-bold text-sm text-gray-800 uppercase tracking-wider mb-2">Evidence Detected:</h4>
+                          <ul className="list-disc pl-5 space-y-1 text-sm text-gray-600">
+                            {scanResult.evidence.map((ev, i) => (
+                              <li key={i}>{ev}</li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+
+                      {scanResult.actions && scanResult.actions.length > 0 && (
+                        <div className="mt-6 p-4 bg-gray-50 rounded-xl">
+                          <h4 className="font-bold text-sm text-gray-800 uppercase tracking-wider mb-2">Safe Next Steps:</h4>
+                          <ol className="list-decimal pl-5 space-y-2 text-sm text-gray-700">
+                            {scanResult.actions.map((act, i) => (
+                              <li key={i}>{act}</li>
+                            ))}
+                          </ol>
+                        </div>
+                      )}
+
+                      {scanResult.disclaimer && (
+                        <p className="text-xs text-gray-400 italic mt-6">{scanResult.disclaimer}</p>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -412,7 +650,7 @@ export default function DashboardPage() {
                 </CardHeader>
                 <CardContent>
                   <div className="divide-y" style={{ borderColor: "var(--line)" }}>
-                    {recentScans.map((scan) => (
+                    {scansHistory.map((scan) => (
                       <div key={scan.id} className="py-4 first:pt-0 last:pb-0 hover:bg-gray-50 transition-colors cursor-pointer rounded-lg px-2 -mx-2">
                         <div className="flex justify-between items-start mb-1">
                           <span className="text-xs font-bold text-gray-500 uppercase tracking-wider">{scan.type}</span>
