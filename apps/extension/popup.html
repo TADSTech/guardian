@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Guardian Beta</title>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      width: 320px;
+      margin: 0;
+      padding: 16px;
+      color: #1f2937;
+    }
+    .header {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 16px;
+      border-bottom: 1px solid #e5e7eb;
+      padding-bottom: 12px;
+    }
+    .brand {
+      font-weight: 900;
+      letter-spacing: -0.05em;
+      font-size: 1.2rem;
+      color: #111827;
+      text-transform: uppercase;
+    }
+    .badge {
+      background: #fef08a;
+      color: #854d0e;
+      font-size: 0.7rem;
+      font-weight: bold;
+      padding: 2px 6px;
+      border-radius: 9999px;
+    }
+    .status {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      background: #f0fdf4;
+      border: 1px solid #bbf7d0;
+      padding: 12px;
+      border-radius: 8px;
+      margin-bottom: 16px;
+    }
+    .status-icon {
+      background: #22c55e;
+      border-radius: 50%;
+      width: 12px;
+      height: 12px;
+      flex-shrink: 0;
+    }
+    .status-text {
+      font-size: 0.9rem;
+      font-weight: 600;
+      color: #166534;
+    }
+    .stats {
+      font-size: 0.85rem;
+      color: #4b5563;
+      line-height: 1.5;
+    }
+    .stats span {
+      font-weight: bold;
+      color: #111827;
+    }
+    .warning {
+      background: #fef2f2;
+      border: 1px solid #fecaca;
+      color: #991b1b;
+      padding: 10px;
+      border-radius: 6px;
+      font-size: 0.8rem;
+      margin-top: 16px;
+      font-weight: 500;
+    }
+    .action-btn {
+      display: block;
+      width: 100%;
+      background: #111827;
+      color: white;
+      border: none;
+      padding: 10px;
+      border-radius: 6px;
+      font-weight: bold;
+      margin-top: 16px;
+      cursor: pointer;
+    }
+    .action-btn:hover {
+      background: #374151;
+    }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <div class="brand">GUARDIAN</div>
+    <div class="badge">DEMO BUILD</div>
+  </div>
+
+  <div class="status" id="status-panel">
+    <div class="status-icon" id="status-dot"></div>
+    <div class="status-text" id="status-msg">Scanning page...</div>
+  </div>
+
+  <div class="stats">
+    This page has been reviewed by Guardian's safety module.<br><br>
+    Threats blocked today: <span id="threats-count">0</span><br>
+    Connected to: <span>Family Dashboard</span>
+  </div>
+
+  <div class="warning">
+    <strong>Note:</strong> This extension is a limited hackathon build. Phishing detection highlights trigger words in red.
+  </div>
+
+  <button class="action-btn" id="scan-btn">Force Re-scan Page</button>
+
+  <script src="popup.js"></script>
+</body>
+</html>

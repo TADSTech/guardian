@@ -1,0 +1,545 @@
+"use client";
+
+import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
+import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Textarea } from "@/components/ui/textarea";
+import { MessageSquare, AppWindow, ShieldAlert, ShieldCheck, ShieldQuestion, Globe, Settings, History, ArrowRight, Loader2, Users, Download, FileText, AlertTriangle, CheckCircle2, Upload, ImageIcon } from "lucide-react";
+import { GoogleTranslate } from "@/components/google-translate";
+
+const familyMembers = [
+  { id: 1, name: "Mama (Mother)", role: "Elderly", status: "Protected", alerts: 2, lastActive: "10 mins ago", device: "WhatsApp Bot" },
+  { id: 2, name: "Tunde (Son)", role: "Child", status: "Needs Attention", alerts: 5, lastActive: "Just now", device: "Browser Extension" },
+];
+
+const familyAlerts = [
+  { id: 101, member: "Tunde (Son)", type: "Phishing Link Blocked", details: "Attempted to open a known fake Roblox login page.", date: "1 hour ago", severity: "High" },
+  { id: 102, member: "Mama (Mother)", type: "Suspicious Voice Note", details: "Received VN asking for bank BVN. Intercepted and warned.", date: "3 hours ago", severity: "Critical" },
+  { id: 104, member: "Tunde (Son)", type: "Inappropriate Content Filtered", details: "Blocked access to an adult content site on the laptop.", date: "Yesterday", severity: "High" },
+  { id: 103, member: "Mama (Mother)", type: "Medical Info Simplified", details: "Requested simplification for diabetes medication instructions.", date: "Yesterday", severity: "Info" },
+];
+
+const recentScans = [
+  { id: 1, type: "WhatsApp Message", excerpt: "Your account will be suspended. Click here to verify...", risk: "Critical", date: "2 hours ago" },
+  { id: 2, type: "Medical Document", excerpt: "Prescription: Amoxicillin 500mg, take 3 times daily...", risk: "Safe", date: "Yesterday" },
+  { id: 3, type: "Voice Note", excerpt: "Hello, this is customer service. We need your BVN...", risk: "High Risk", date: "2 days ago" },
+];
+
+const aiResponses = [
+  { level: "Safe", icon: <ShieldCheck className="text-green-600 w-6 h-6" />, color: "bg-green-100 text-green-800", text: "This message appears completely safe. It uses standard language and does not ask for sensitive information." },
+  { level: "Low Risk", icon: <ShieldQuestion className="text-yellow-600 w-6 h-6" />, color: "bg-yellow-100 text-yellow-800", text: "This looks mostly safe, but always verify the sender before clicking links or sharing details." },
+  { level: "Suspicious", icon: <ShieldAlert className="text-orange-500 w-6 h-6" />, color: "bg-orange-100 text-orange-800", text: "Be careful. This message creates a false sense of urgency. Take a moment to verify directly with the company." },
+  { level: "High Risk", icon: <ShieldAlert className="text-red-500 w-6 h-6" />, color: "bg-red-100 text-red-800", text: "Warning: This message asks for your OTP or password. Legitimate organizations will never ask for this." },
+  { level: "Critical", icon: <ShieldAlert className="text-red-700 w-6 h-6" />, color: "bg-red-200 text-red-900", text: "DO NOT CLICK. This is a known scam pattern designed to steal your money. Delete immediately." },
+];
+
+export default function DashboardPage() {
+  const router = useRouter();
+  const [userEmail, setUserEmail] = useState<string | null>(null);
+  
+  const [scanInput, setScanInput] = useState("");
+  const [scanImage, setScanImage] = useState<File | null>(null);
+  const [scanImagePreview, setScanImagePreview] = useState<string | null>(null);
+  const [isScanning, setIsScanning] = useState(false);
+  const [scanResult, setScanResult] = useState<typeof aiResponses[0] | null>(null);
+
+  const [exportState, setExportState] = useState<"idle" | "loading" | "error">("idle");
+
+  useEffect(() => {
+    const session = localStorage.getItem("guardian_user");
+    if (!session) {
+      router.push("/login");
+    } else {
+      try {
+        const { email } = JSON.parse(session);
+        setUserEmail(email);
+      } catch {
+        router.push("/login");
+      }
+    }
+  }, [router]);
+
+  const handleLogout = () => {
+    localStorage.removeItem("guardian_user");
+    router.push("/");
+  };
+
+  const handleScan = (source: "text" | "image" = "text") => {
+    if (source === "text" && !scanInput.trim()) return;
+    if (source === "image" && !scanImage) return;
+    setIsScanning(true);
+    setScanResult(null);
+    
+    setTimeout(() => {
+      const randomIndex = Math.floor(Math.random() * aiResponses.length);
+      setScanResult(aiResponses[randomIndex]);
+      setIsScanning(false);
+    }, 1500);
+  };
+
+  const handleExport = () => {
+    setExportState("loading");
+    setTimeout(() => {
+      setExportState("error");
+    }, 2500);
+  };
+
+  if (!userEmail) return null;
+
+  return (
+    <div className="min-h-screen flex flex-col" style={{ background: "var(--cream)", color: "var(--ink)" }}>
+      {/* Navbar */}
+      <header className="site-header border-b bg-white sticky top-0 z-10" style={{ borderColor: "var(--line)", padding: "1rem 2rem" }}>
+        <a className="brand" style={{ fontWeight: 900, textTransform: "uppercase", letterSpacing: "-0.05em", fontSize: "1.5rem" }} href="/dashboard" aria-label="Guardian dashboard">GUARDIAN</a>
+        
+        <div className="flex items-center gap-6">
+          <div className="hidden md:flex items-center gap-2 text-sm font-medium">
+            <Globe className="w-4 h-4" />
+            <GoogleTranslate />
+          </div>
+          <span className="text-sm hidden sm:inline-block font-medium" style={{ color: "var(--muted)" }}>{userEmail}</span>
+          <Button variant="outline" size="sm" onClick={handleLogout}>Sign out</Button>
+        </div>
+      </header>
+      
+      <main className="flex-1 p-4 md:p-8 max-w-7xl mx-auto w-full">
+        
+        <Tabs defaultValue="family" className="w-full">
+          <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-4">
+            <div>
+              <h1 className="text-3xl mb-1" style={{ fontFamily: "var(--serif)", letterSpacing: "-0.04em", lineHeight: 1.1 }}>Dashboard</h1>
+              <p style={{ color: "var(--muted)" }}>Manage your safety and monitor your connected family members.</p>
+            </div>
+            <TabsList className="bg-white border shadow-sm p-1 rounded-xl h-auto" style={{ borderColor: "var(--line)" }}>
+              <TabsTrigger value="family" className="rounded-lg py-2 px-4 data-[state=active]:bg-green-50 data-[state=active]:text-green-800"><Users className="w-4 h-4 mr-2" /> Family Safety</TabsTrigger>
+              <TabsTrigger value="scanner" className="rounded-lg py-2 px-4 data-[state=active]:bg-green-50 data-[state=active]:text-green-800"><ShieldCheck className="w-4 h-4 mr-2" /> Manual Scanner</TabsTrigger>
+              <TabsTrigger value="data" className="rounded-lg py-2 px-4 data-[state=active]:bg-green-50 data-[state=active]:text-green-800"><FileText className="w-4 h-4 mr-2" /> Export & Reports</TabsTrigger>
+            </TabsList>
+          </div>
+
+          {/* FAMILY SAFETY TAB */}
+          <TabsContent value="family" className="space-y-6 animate-in fade-in duration-500">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              
+              <div className="md:col-span-2 space-y-6">
+                <Card className="border-none shadow-sm bg-white">
+                  <CardHeader>
+                    <CardTitle className="font-serif text-2xl">Connected Members</CardTitle>
+                    <CardDescription>Monitor the digital safety status of your dependents.</CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    {familyMembers.map(member => (
+                      <div key={member.id} className="flex flex-col sm:flex-row items-start sm:items-center justify-between p-4 rounded-xl border hover:border-green-300 transition-colors" style={{ borderColor: "var(--line)" }}>
+                        <div className="flex items-center gap-4 mb-3 sm:mb-0">
+                          <div className={`p-3 rounded-full ${member.status === 'Protected' ? 'bg-green-100 text-green-700' : 'bg-orange-100 text-orange-600'}`}>
+                            {member.status === 'Protected' ? <CheckCircle2 className="w-6 h-6" /> : <AlertTriangle className="w-6 h-6" />}
+                          </div>
+                          <div>
+                            <h3 className="font-bold text-lg">{member.name}</h3>
+                            <div className="flex gap-2 text-xs text-gray-500 font-medium">
+                              <span className="uppercase">{member.role}</span> &bull; 
+                              <span>{member.device}</span>
+                            </div>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-3 w-full sm:w-auto">
+                          <div className="text-right flex-1 sm:flex-none">
+                            <p className="text-sm font-bold text-gray-800">{member.alerts} Threats Blocked</p>
+                            <p className="text-xs text-gray-400">Last active: {member.lastActive}</p>
+                          </div>
+                          <Button variant="outline" size="sm">Manage</Button>
+                        </div>
+                      </div>
+                    ))}
+                    <Dialog>
+                      <DialogTrigger
+                        render={
+                          <Button variant="outline" className="w-full mt-2 border-dashed border-2 hover:bg-gray-50 text-gray-600 font-bold">
+                            + Invite Family Member
+                          </Button>
+                        }
+                      />
+                      <DialogContent>
+                        <DialogHeader>
+                          <DialogTitle>Invite Link Copied!</DialogTitle>
+                          <DialogDescription>
+                            The invitation link has been copied to your clipboard. Send it to your family member via WhatsApp to connect them to Guardian.
+                          </DialogDescription>
+                        </DialogHeader>
+                      </DialogContent>
+                    </Dialog>
+                  </CardContent>
+                </Card>
+
+                <Card className="border-none shadow-sm bg-white">
+                  <CardHeader>
+                    <CardTitle className="font-serif text-xl flex items-center gap-2"><History className="w-5 h-5" /> Threat Interception Log</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="space-y-4">
+                      {familyAlerts.map(alert => (
+                        <div key={alert.id} className="p-4 bg-gray-50 rounded-xl border-l-4" style={{ borderLeftColor: alert.severity === 'Critical' ? '#dc2626' : alert.severity === 'High' ? '#ea580c' : '#3b82f6' }}>
+                          <div className="flex justify-between items-start mb-1">
+                            <div>
+                              <Badge variant="outline" className="mb-2 bg-white">{alert.member}</Badge>
+                              <h4 className="font-bold text-sm">{alert.type}</h4>
+                            </div>
+                            <span className="text-xs text-gray-400">{alert.date}</span>
+                          </div>
+                          <p className="text-sm text-gray-600 mt-1">{alert.details}</p>
+                        </div>
+                      ))}
+                    </div>
+                  </CardContent>
+                </Card>
+              </div>
+
+              <div className="space-y-6">
+                <Card className="border-none shadow-sm bg-white bg-gradient-to-br from-green-50 to-white">
+                  <CardHeader>
+                    <CardTitle className="font-serif text-xl flex items-center gap-2"><MessageSquare className="w-5 h-5 text-green-600" /> WhatsApp Integration</CardTitle>
+                    <CardDescription>Guardian works where your family already communicates.</CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <p className="text-sm text-gray-600 mb-4">Connect the Guardian WhatsApp bot to an elderly parent's phone. They can forward any suspicious message to the bot to get an instant safety check in their native language.</p>
+                    <Dialog>
+                      <DialogTrigger
+                        render={
+                          <Button className="w-full bg-green-600 hover:bg-green-700 text-white font-bold">Connect WhatsApp Bot</Button>
+                        }
+                      />
+                      <DialogContent>
+                        <DialogHeader>
+                          <DialogTitle className="flex items-center gap-2"><MessageSquare className="w-5 h-5 text-green-600"/> WhatsApp Bot Connected</DialogTitle>
+                          <DialogDescription>
+                            Normally, this would prompt a QR code scan. For this hackathon demo, you can test the flow by texting the bot directly.
+                          </DialogDescription>
+                        </DialogHeader>
+                        <div className="py-4 space-y-4">
+                          <div className="p-4 bg-green-50 text-green-900 border border-green-200 rounded-lg text-sm">
+                            <strong>Demo Phone Number:</strong> +1 (555) 019-8372<br/>
+                            <strong>Activation Code:</strong> GRD-2938
+                          </div>
+                          <p className="text-sm text-gray-600">Send the activation code to the number above on WhatsApp to link a device.</p>
+                        </div>
+                      </DialogContent>
+                    </Dialog>
+                  </CardContent>
+                </Card>
+
+                <Card className="border-none shadow-sm bg-white bg-gradient-to-br from-blue-50 to-white">
+                  <CardHeader>
+                    <CardTitle className="font-serif text-xl flex items-center gap-2"><Globe className="w-5 h-5 text-blue-600" /> Browser Extension</CardTitle>
+                    <CardDescription>Block phishing links automatically.</CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <p className="text-sm text-gray-600 mb-4">Install the Guardian extension on your child's laptop to automatically intercept known scams and highlight dangerous keywords.</p>
+                    
+                    <Dialog>
+                      <DialogTrigger
+                        render={
+                          <Button className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold">Install Extension</Button>
+                        }
+                      />
+                      <DialogContent>
+                        <DialogHeader>
+                          <DialogTitle className="flex items-center gap-2"><AppWindow className="w-5 h-5 text-blue-600" /> Setup Chrome Extension</DialogTitle>
+                          <DialogDescription>
+                            Because this is a limited hackathon demo build, the extension must be sideloaded manually via Chrome Developer mode.
+                          </DialogDescription>
+                        </DialogHeader>
+                        <div className="py-4 space-y-4">
+                          <a href="/guardian-extension-demo.zip" download>
+                            <Button className="w-full bg-blue-600 hover:bg-blue-700 font-bold mb-4">
+                              <Download className="w-4 h-4 mr-2" /> Download Demo Build (.zip)
+                            </Button>
+                          </a>
+                          
+                          <div className="text-sm space-y-2">
+                            <h4 className="font-bold">Installation Steps:</h4>
+                            <ol className="list-decimal pl-5 space-y-1 text-gray-700">
+                              <li>Extract the downloaded <code>guardian-extension-demo.zip</code> file.</li>
+                              <li>Open Chrome and navigate to <code>chrome://extensions</code></li>
+                              <li>Toggle <strong>"Developer mode"</strong> on the top right.</li>
+                              <li>Click <strong>"Load unpacked"</strong> and select the extracted folder.</li>
+                            </ol>
+                            <p className="text-xs text-gray-500 italic mt-4">*Note: The demo extension will highlight phishing trigger words (like "OTP", "BVN") in red across all webpages to demonstrate the detection capability.</p>
+                          </div>
+                        </div>
+                      </DialogContent>
+                    </Dialog>
+                  </CardContent>
+                </Card>
+              </div>
+
+            </div>
+          </TabsContent>
+
+          {/* MANUAL SCANNER TAB */}
+          <TabsContent value="scanner" className="animate-in fade-in duration-500 grid grid-cols-1 lg:grid-cols-3 gap-8">
+            <div className="lg:col-span-2 space-y-6">
+              <div className="bg-white p-6 md:p-8 rounded-2xl border shadow-sm" style={{ borderColor: "var(--line)" }}>
+                <div className="mb-6">
+                  <h2 className="text-2xl font-serif mb-2">Guardian Analysis Tool</h2>
+                  <p style={{ color: "var(--muted)" }}>Paste a suspicious message, upload a document image, or drop a file to get an instant safety check.</p>
+                </div>
+
+                <Tabs defaultValue="text" className="w-full">
+                  <TabsList className="grid w-full grid-cols-3 mb-6 bg-gray-50 p-1 rounded-xl">
+                    <TabsTrigger value="text" className="rounded-lg">Paste Text</TabsTrigger>
+                    <TabsTrigger value="image" className="rounded-lg">Upload Image</TabsTrigger>
+                    <TabsTrigger value="voice" disabled className="rounded-lg opacity-50">Voice Note</TabsTrigger>
+                  </TabsList>
+                  
+                  <TabsContent value="text" className="space-y-4">
+                    <Textarea 
+                      placeholder="e.g., Congratulations! You have been selected to receive 50,000 Naira. Click the link to claim your prize..." 
+                      className="min-h-[160px] resize-none text-base p-4 rounded-xl"
+                      value={scanInput}
+                      onChange={(e) => setScanInput(e.target.value)}
+                    />
+                    <Button 
+                      onClick={() => handleScan("text")} 
+                      disabled={!scanInput.trim() || isScanning}
+                      className="w-full h-12 text-lg font-bold rounded-xl transition-all" 
+                      style={{ background: "var(--deep)" }}
+                    >
+                      {isScanning ? (
+                        <><Loader2 className="mr-2 h-5 w-5 animate-spin" /> Analyzing...</>
+                      ) : "Analyze for Safety"}
+                    </Button>
+                  </TabsContent>
+                  
+                  <TabsContent value="image" className="space-y-4">
+                    <div
+                      className="relative flex flex-col items-center justify-center min-h-[160px] border-2 border-dashed rounded-xl cursor-pointer hover:border-green-400 transition-colors p-6"
+                      style={{ borderColor: scanImage ? "#16a34a" : "var(--line)" }}
+                      onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); }}
+                      onDrop={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        const file = e.dataTransfer.files[0];
+                        if (file && file.type.startsWith("image/")) {
+                          setScanImage(file);
+                          setScanImagePreview(URL.createObjectURL(file));
+                        }
+                      }}
+                      onClick={() => document.getElementById("image-upload-input")?.click()}
+                    >
+                      <input
+                        id="image-upload-input"
+                        type="file"
+                        accept="image/*"
+                        className="hidden"
+                        onChange={(e) => {
+                          const file = e.target.files?.[0];
+                          if (file) {
+                            setScanImage(file);
+                            setScanImagePreview(URL.createObjectURL(file));
+                          }
+                        }}
+                      />
+                      {scanImagePreview ? (
+                        <div className="flex flex-col items-center gap-3 w-full">
+                          <img
+                            src={scanImagePreview}
+                            alt="Uploaded preview"
+                            className="max-h-[200px] rounded-lg object-contain"
+                          />
+                          <p className="text-sm text-gray-500 font-medium">{scanImage?.name}</p>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setScanImage(null);
+                              setScanImagePreview(null);
+                            }}
+                          >
+                            Remove
+                          </Button>
+                        </div>
+                      ) : (
+                        <div className="flex flex-col items-center gap-3 text-gray-400">
+                          <ImageIcon className="w-12 h-12" />
+                          <p className="text-lg font-medium">Click to upload or drag and drop</p>
+                          <p className="text-sm">PNG, JPG, WebP up to 10MB</p>
+                        </div>
+                      )}
+                    </div>
+                    <Button
+                      onClick={() => handleScan("image")}
+                      disabled={!scanImage || isScanning}
+                      className="w-full h-12 text-lg font-bold rounded-xl transition-all"
+                      style={{ background: "var(--deep)" }}
+                    >
+                      {isScanning ? (
+                        <><Loader2 className="mr-2 h-5 w-5 animate-spin" /> Analyzing...</>
+                      ) : (
+                        <><Upload className="mr-2 h-5 w-5" /> Analyze Image for Safety</>
+                      )}
+                    </Button>
+                  </TabsContent>
+                </Tabs>
+              </div>
+
+              {scanResult && (
+                <div className="bg-white p-6 md:p-8 rounded-2xl border shadow-lg border-t-4 animate-in fade-in slide-in-from-bottom-4 duration-500" style={{ borderTopColor: scanResult.level.includes("Safe") ? "#16a34a" : scanResult.level.includes("Risk") || scanResult.level === "Critical" ? "#dc2626" : "#f59e0b" }}>
+                  <div className="flex items-start gap-4">
+                    <div className={`p-3 rounded-2xl ${scanResult.color}`}>
+                      {scanResult.icon}
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-3 mb-1">
+                        <h3 className="text-xl font-serif font-bold">Guardian Summary</h3>
+                        <Badge variant="outline" className={`border-none font-bold ${scanResult.color}`}>{scanResult.level}</Badge>
+                      </div>
+                      <p className="text-gray-700 text-lg leading-relaxed mt-3">{scanResult.text}</p>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <div className="lg:col-span-1">
+              <Card className="border-none shadow-sm bg-white">
+                <CardHeader>
+                  <CardTitle className="font-serif text-xl flex items-center gap-2"><History className="w-5 h-5" /> Your Personal Scans</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="divide-y" style={{ borderColor: "var(--line)" }}>
+                    {recentScans.map((scan) => (
+                      <div key={scan.id} className="py-4 first:pt-0 last:pb-0 hover:bg-gray-50 transition-colors cursor-pointer rounded-lg px-2 -mx-2">
+                        <div className="flex justify-between items-start mb-1">
+                          <span className="text-xs font-bold text-gray-500 uppercase tracking-wider">{scan.type}</span>
+                        </div>
+                        <p className="text-sm font-medium mb-2 truncate">{scan.excerpt}</p>
+                        <Badge variant="secondary" className={
+                          scan.risk === "Safe" ? "bg-green-100 text-green-700 hover:bg-green-100" : 
+                          scan.risk === "High Risk" ? "bg-red-100 text-red-700 hover:bg-red-100" : 
+                          "bg-red-200 text-red-900 hover:bg-red-200"
+                        }>{scan.risk}</Badge>
+                      </div>
+                    ))}
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+          </TabsContent>
+
+          {/* EXPORT DATA TAB */}
+          <TabsContent value="data" className="animate-in fade-in duration-500">
+            <Card className="border-none shadow-sm bg-white max-w-3xl">
+              <CardHeader>
+                <CardTitle className="font-serif text-2xl">Data Export & Reports</CardTitle>
+                <CardDescription>Download safety reports for your family members to share with authorities or keep for personal records.</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-6">
+                <div className="p-6 border rounded-2xl flex flex-col sm:flex-row items-center justify-between gap-4 bg-gray-50" style={{ borderColor: "var(--line)" }}>
+                  <div className="flex items-center gap-4">
+                    <div className="p-4 bg-white rounded-xl shadow-sm"><FileText className="w-8 h-8 text-green-700" /></div>
+                    <div>
+                      <h3 className="font-bold text-lg">Monthly Safety Report</h3>
+                      <p className="text-sm text-gray-500">Contains all intercepted threats and warnings from the last 30 days.</p>
+                    </div>
+                  </div>
+                  <Dialog onOpenChange={(open) => { if (!open) setExportState("idle"); }}>
+                    <DialogTrigger
+                      render={
+                        <Button className="w-full sm:w-auto bg-green-700 hover:bg-green-800"><Download className="w-4 h-4 mr-2" /> Download PDF</Button>
+                      }
+                    />
+                    <DialogContent>
+                      <DialogHeader>
+                        <DialogTitle>Monthly Safety Report (PDF)</DialogTitle>
+                      </DialogHeader>
+                      <div className="py-6 flex flex-col items-center justify-center text-center space-y-4">
+                        {exportState === "idle" && (
+                          <>
+                            <p className="text-gray-500 mb-4">Generate a comprehensive summary of all intercepted threats for the last 30 days.</p>
+                            <Button onClick={handleExport} className="w-full bg-green-700 hover:bg-green-800">
+                              Start Export
+                            </Button>
+                          </>
+                        )}
+                        {exportState === "loading" && (
+                          <>
+                            <Loader2 className="w-8 h-8 animate-spin text-green-700" />
+                            <p className="text-gray-600">Gathering data and generating PDF securely...</p>
+                          </>
+                        )}
+                        {exportState === "error" && (
+                          <>
+                            <AlertTriangle className="w-8 h-8 text-red-600" />
+                            <p className="text-red-600 font-medium">Export failed due to network timeout.</p>
+                            <p className="text-sm text-gray-500">Please try again later.</p>
+                            <Button onClick={() => setExportState("idle")} variant="outline" className="w-full mt-4">
+                              Retry
+                            </Button>
+                          </>
+                        )}
+                      </div>
+                    </DialogContent>
+                  </Dialog>
+                </div>
+
+                <div className="p-6 border rounded-2xl flex flex-col sm:flex-row items-center justify-between gap-4 bg-gray-50" style={{ borderColor: "var(--line)" }}>
+                  <div className="flex items-center gap-4">
+                    <div className="p-4 bg-white rounded-xl shadow-sm"><AlertTriangle className="w-8 h-8 text-red-700" /></div>
+                    <div>
+                      <h3 className="font-bold text-lg">Incident Report (Fraud)</h3>
+                      <p className="text-sm text-gray-500">Detailed logs of high-risk scams suitable for reporting to banks.</p>
+                    </div>
+                  </div>
+                  <Dialog onOpenChange={(open) => { if (!open) setExportState("idle"); }}>
+                    <DialogTrigger
+                      render={
+                        <Button variant="outline" className="w-full sm:w-auto border-red-200 text-red-700 hover:bg-red-50"><Download className="w-4 h-4 mr-2" /> Download CSV</Button>
+                      }
+                    />
+                    <DialogContent>
+                      <DialogHeader>
+                        <DialogTitle>Incident Report (CSV)</DialogTitle>
+                      </DialogHeader>
+                      <div className="py-6 flex flex-col items-center justify-center text-center space-y-4">
+                        {exportState === "idle" && (
+                          <>
+                            <p className="text-gray-500 mb-4">Download detailed logs of high-risk scams suitable for bank reports.</p>
+                            <Button onClick={handleExport} className="w-full bg-red-600 hover:bg-red-700 text-white">
+                              Start Export
+                            </Button>
+                          </>
+                        )}
+                        {exportState === "loading" && (
+                          <>
+                            <Loader2 className="w-8 h-8 animate-spin text-red-600" />
+                            <p className="text-gray-600">Compiling incident logs into CSV format...</p>
+                          </>
+                        )}
+                        {exportState === "error" && (
+                          <>
+                            <AlertTriangle className="w-8 h-8 text-red-600" />
+                            <p className="text-red-600 font-medium">Export failed due to network timeout.</p>
+                            <p className="text-sm text-gray-500">Please try again later.</p>
+                            <Button onClick={() => setExportState("idle")} variant="outline" className="w-full mt-4">
+                              Retry
+                            </Button>
+                          </>
+                        )}
+                      </div>
+                    </DialogContent>
+                  </Dialog>
+                </div>
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+        </Tabs>
+      </main>
+    </div>
+  );
+}

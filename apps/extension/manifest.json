@@ -1,0 +1,20 @@
+{
+  "manifest_version": 3,
+  "name": "Guardian Safety Scanner",
+  "version": "1.0.0",
+  "description": "Guardian Beta (Demo Build). Protects vulnerable users by scanning webpages for common phishing phrases and scams.",
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "Guardian Demo"
+  },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content.js"]
+    }
+  ],
+  "permissions": [
+    "activeTab",
+    "scripting"
+  ]
+}
