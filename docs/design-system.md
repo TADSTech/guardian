@@ -4,7 +4,7 @@ The dashboard should borrow the reference's calm Guardian character without copy
 
 ## Accessibility defaults
 
-- Base body text: 16px minimum; dashboard settings include large-text mode.
+- Base body text: 16px minimum. There is no dashboard large-text-mode toggle yet — today, large text is only available via the Chrome extension's Elderly Mode.
 - All body copy uses plain English with short sentences and direct verbs.
 - Use a semantic 8px spacing scale and only 2–3 font weights.
 - Meet WCAG AA contrast; risk must use both colour and a visible text label/icon.

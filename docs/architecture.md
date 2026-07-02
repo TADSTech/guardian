@@ -1,5 +1,7 @@
 # Architecture draft
 
+> **This is an early planning draft, not the shipped architecture.** The `services/wa-backend` and `services/ai-service` split, the standalone `apps/dashboard`, and PostgreSQL described below were never built. What actually exists is a single Fastify service (`apps/api`) plus `apps/web` and `apps/extension`, using SQLite — see `docs/ROADMAP.md` and `docs/setup.md` for the real, current architecture.
+
 ## System shape
 
 ```mermaid
@@ -71,13 +73,7 @@ Start with four screens: operational overview, flagged conversations, analysis d
 
 ## `packages/contracts`
 
-```text
-packages/contracts/
-├── http/                       # Request and response schemas
-├── events/                     # MessageReceived, AnalysisCompleted, ReplyDelivered
-├── models/                     # Shared primitives: IDs, risk levels, locales
-└── README.md
-```
+In practice this is a single flat `src/index.ts` exporting `AnalysisKind`, `RiskLevel`, `AnalysisRequest`, and `AnalysisResult` — not the `http/`/`events/`/`models/` subfolder split originally planned here. It's imported by both `apps/api` and `apps/web`.
 
 Version these schemas deliberately. Breaking changes require a new version and a migration window.
 

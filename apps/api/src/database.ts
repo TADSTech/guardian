@@ -30,6 +30,18 @@ db.run(`
   )
 `);
 
+db.run(`
+  CREATE TABLE IF NOT EXISTS processed_webhook_messages (
+    message_id TEXT PRIMARY KEY,
+    created_at TEXT NOT NULL
+  )
+`);
+
+// Bound the table's growth: drop dedup records old enough that Meta would
+// never retry-deliver that message again anyway.
+const webhookDedupCutoff = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
+db.prepare("DELETE FROM processed_webhook_messages WHERE created_at < $cutoff").run({ $cutoff: webhookDedupCutoff });
+
 console.log(`💾 SQLite Database initialized at ${dbPath}`);
 
 export interface AnalysisRecord {
@@ -81,5 +93,20 @@ export const dbService = {
       $note: feedback.note || null,
       $created_at: new Date().toISOString()
     });
+  },
+
+  // Durable webhook idempotency check, so retried/duplicate WhatsApp webhook
+  // deliveries aren't reprocessed even across API restarts.
+  hasProcessedWebhookMessage: (messageId: string): boolean => {
+    const query = db.prepare("SELECT 1 FROM processed_webhook_messages WHERE message_id = $id");
+    return query.get({ $id: messageId }) !== null;
+  },
+
+  markWebhookMessageProcessed: (messageId: string): void => {
+    const query = db.prepare(`
+      INSERT OR IGNORE INTO processed_webhook_messages (message_id, created_at)
+      VALUES ($id, $created_at)
+    `);
+    query.run({ $id: messageId, $created_at: new Date().toISOString() });
   }
 };

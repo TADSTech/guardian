@@ -52,4 +52,4 @@ Guardian isn't just an app; it's infrastructure for digital trust. By combining 
 - **Frontend**: Next.js App Router with Tailwind CSS (v4) and shadcn/ui.
 - **Chrome Extension**: Manifest V3, utilizing `content_scripts` for dynamic DOM parsing and highlighting of phishing keywords.
 - **Localization**: Handled dynamically on the client via the Google Translate API, ensuring zero-latency translation of both static and user-generated text.
-- **Backend**: Python with Flask for AI analysis pipelines and WhatsApp webhook processing.
+- **Backend**: Node.js with Fastify (running on Bun) for AI analysis pipelines and WhatsApp webhook processing.

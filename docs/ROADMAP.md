@@ -18,7 +18,7 @@ WhatsApp and voice are supporting demo surfaces. They should feel real, but neit
 |---|---|---|
 | Web | Next.js App Router, TypeScript, Tailwind, shadcn/ui, Framer Motion | Premium landing page, demo lab, and judge mode. |
 | API | Node.js, Fastify, TypeScript | Small, typed boundary for uploads and integrations. |
-| AI | OpenAI Responses API with GPT-5 family models | One provider abstraction for image, document, and text understanding. |
+| AI | OpenAI Chat Completions with `gpt-4o-mini`, falling back to local heuristics without an API key | One provider abstraction for image, document, and text understanding. |
 | Speech | OpenAI transcription; browser speech synthesis | Reliable input and no extra voice service. |
 | Extension | Chrome Manifest V3, React popup, content script | Proves Guardian's accessibility promise. |
 | Persistence | None by default; SQLite only for local demo history | Prepared fixtures beat infrastructure for this demo. |
@@ -129,6 +129,12 @@ Persistence is optional. If demo history is added, use only `analysis` (id, kind
 | `POST /v1/analyze/document` | 2 | Document explanation |
 | `POST /v1/analyze/page` | 3 | Extension page simplification |
 | `POST /v1/analyze/voice` | 4 | Transcribe and explain voice note |
+| `GET /v1/analyze/history` | - | Recent analysis history for the dashboard |
+| `POST /v1/feedback` | - | Save a rating/note against a past analysis |
+| `GET /v1/whatsapp/status` | 4 | Current Baileys connection status, QR/pairing code |
+| `POST /v1/whatsapp/connect` | 4 | Start the direct WhatsApp bot connection |
+| `POST /v1/whatsapp/disconnect` | 4 | Log out and clear the WhatsApp session |
+| `GET /v1/webhooks/whatsapp` | 4 | Meta Cloud API webhook verification challenge |
 | `POST /v1/webhooks/whatsapp` | 4 | WhatsApp Cloud API seam |
 
 ## Deliberately not building

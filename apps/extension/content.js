@@ -144,15 +144,20 @@
       letter-spacing: 0.02em !important;
     }
 
-    /* Focus Mode styles */
-    body.guardian-focus-active aside, 
-    body.guardian-focus-active nav, 
-    body.guardian-focus-active footer, 
-    body.guardian-focus-active header, 
-    body.guardian-focus-active iframe, 
-    body.guardian-focus-active [class*="sidebar"], 
-    body.guardian-focus-active [class*="ad"],
-    body.guardian-focus-active [id*="ad"] {
+    /* Focus Mode styles. [class~=] / [id~=] match a whole class/id token, not
+       a substring, so "ad" doesn't also match unrelated words like "header",
+       "shadow", "gradient", or "download" the way [class*="ad"] did. */
+    body.guardian-focus-active aside,
+    body.guardian-focus-active nav,
+    body.guardian-focus-active footer,
+    body.guardian-focus-active header,
+    body.guardian-focus-active iframe,
+    body.guardian-focus-active [class*="sidebar"],
+    body.guardian-focus-active [class~="ad"],
+    body.guardian-focus-active [class~="ads"],
+    body.guardian-focus-active [class*="advert"],
+    body.guardian-focus-active [id~="ad"],
+    body.guardian-focus-active [id~="ads"] {
       display: none !important;
       opacity: 0 !important;
     }

@@ -273,8 +273,6 @@ fastify.get("/v1/webhooks/whatsapp", async (request, reply) => {
   return reply.status(403).send({ error: "Verification failed" });
 });
 
-const processedMessageIds = new Set<string>();
-
 // WhatsApp Webhook message parser & analyzer (Meta Cloud API)
 fastify.post("/v1/webhooks/whatsapp", async (request, reply) => {
   const signatureHeader = request.headers["x-hub-signature-256"] as string | undefined;
@@ -300,16 +298,12 @@ fastify.post("/v1/webhooks/whatsapp", async (request, reply) => {
       
       for (const msg of messages) {
         const msgId = msg.id;
-        
-        // Idempotency check
-        if (processedMessageIds.has(msgId)) {
+
+        // Idempotency check, durable across restarts since it's backed by SQLite.
+        if (dbService.hasProcessedWebhookMessage(msgId)) {
           continue;
         }
-        processedMessageIds.add(msgId);
-        if (processedMessageIds.size > 1000) {
-          const first = processedMessageIds.values().next().value;
-          if (first) processedMessageIds.delete(first);
-        }
+        dbService.markWebhookMessageProcessed(msgId);
 
         const senderPhone = msg.from;
         const msgType = msg.type;
