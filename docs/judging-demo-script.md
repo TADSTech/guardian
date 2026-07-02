@@ -37,7 +37,7 @@ Follow this script to deliver a flawless, high-impact 3-minute demo to the hacka
 1. Click **"Install Extension"** under the **Family Safety** tab.
 2. Sideload the unpacked extension via `chrome://extensions` in Chrome Developer Mode.
 3. Open any website (or a test page). Click the green shield icon (🛡️) on the bottom right.
-4. Toggle **Elderly Mode**: Note how page font sizes double and background contrast sharpens.
+4. Toggle **Elderly Mode**: Note how page font sizes grow substantially (140%) and background contrast sharpens.
 5. Toggle **Focus Mode**: Note how ads, sidebars, and confusing headers disappear.
 6. Click **Simplify page**: View the quick clean summary of the site content.
 7. Click **Read aloud**: Demonstrates browser speech synthesis reading content out.

@@ -1,21 +1,138 @@
 import Fastify from "fastify";
 import cors from "@fastify/cors";
-import { runAnalysis } from "./analysis/engine";
+import rateLimit from "@fastify/rate-limit";
+import { createHmac, timingSafeEqual } from "node:crypto";
+import { runAnalysis, transcribeAudio } from "./analysis/engine";
 import { guardianWhatsApp } from "./whatsapp/connection";
 import { dbService } from "./database";
 import type { AnalysisRequest } from "@guardian/contracts";
+
+// Requests larger than this are rejected outright. Sized to comfortably fit
+// a base64-encoded 5MB image (which inflates to ~6.7MB) plus JSON overhead.
+const MAX_REQUEST_BYTES = 8 * 1024 * 1024;
+const MAX_TEXT_LENGTH = 2000;
+const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
 
 const fastify = Fastify({
   logger: {
     level: "info",
   },
+  bodyLimit: MAX_REQUEST_BYTES,
 });
 
-// Configure CORS
+// Configure CORS. Allowed web origins come from ALLOWED_ORIGINS (comma-separated),
+// defaulting to the local dashboard dev server. Chrome extension requests are
+// always allowed since their origin (chrome-extension://<id>) is only reachable
+// by the installed extension itself, not by arbitrary websites.
+const allowedOrigins = (process.env.ALLOWED_ORIGINS || "http://localhost:3000,http://127.0.0.1:3000")
+  .split(",")
+  .map((origin) => origin.trim());
+
 await fastify.register(cors, {
-  origin: true, // Allow all origins for the hackathon demo, or configure specifically
+  origin: (origin, callback) => {
+    const isBrowserlessRequest = !origin; // curl, WhatsApp webhooks, server-to-server calls
+    const isAllowed = isBrowserlessRequest || origin.startsWith("chrome-extension://") || allowedOrigins.includes(origin);
+    callback(isAllowed ? null : new Error("Not allowed by CORS"), isAllowed);
+  },
   methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
 });
+
+// Protects the OpenAI-backed analysis endpoints from being used to run up
+// API costs or exhaust the daily quota.
+await fastify.register(rateLimit, {
+  max: 30,
+  timeWindow: "1 minute",
+});
+
+// Keep the raw request bytes around so the WhatsApp webhook can verify
+// Meta's HMAC signature, which is computed over the exact bytes sent
+// (re-serializing the parsed JSON would not reproduce the same signature).
+fastify.addContentTypeParser("application/json", { parseAs: "buffer" }, (request, body, done) => {
+  (request as any).rawBody = body;
+  if (body.length === 0) {
+    done(null, {});
+    return;
+  }
+  try {
+    done(null, JSON.parse(body.toString("utf8")));
+  } catch (err) {
+    done(err as Error, undefined);
+  }
+});
+
+/**
+ * Verifies Meta's `X-Hub-Signature-256` header against the raw webhook body.
+ * Returns true when the signature is valid, or when no app secret is
+ * configured (local/demo setups that don't use the Cloud API webhook).
+ */
+function isValidWhatsAppSignature(rawBody: Buffer, signatureHeader: string | undefined): boolean {
+  const appSecret = process.env.WHATSAPP_APP_SECRET;
+  if (!appSecret) {
+    fastify.log.warn("WHATSAPP_APP_SECRET is not set; skipping webhook signature verification");
+    return true;
+  }
+  if (!signatureHeader) return false;
+
+  const expected = "sha256=" + createHmac("sha256", appSecret).update(rawBody).digest("hex");
+  const expectedBuffer = Buffer.from(expected);
+  const actualBuffer = Buffer.from(signatureHeader);
+  if (expectedBuffer.length !== actualBuffer.length) return false;
+
+  return timingSafeEqual(expectedBuffer, actualBuffer);
+}
+
+/**
+ * Rejects analysis input that's too large to be a legitimate request:
+ * base64-encoded images over MAX_IMAGE_BYTES, or plain text over
+ * MAX_TEXT_LENGTH characters. Returns an error message, or null if valid.
+ */
+function validateAnalysisInput(input: { text?: string; url?: string; fileName?: string }): string | null {
+  const text = input.text;
+  if (!text) return null;
+
+  if (text.startsWith("data:image/")) {
+    const base64Data = text.split(",")[1] || "";
+    const approxBytes = Math.floor((base64Data.length * 3) / 4);
+    if (approxBytes > MAX_IMAGE_BYTES) {
+      return `Image exceeds the ${MAX_IMAGE_BYTES / (1024 * 1024)}MB limit`;
+    }
+    return null;
+  }
+
+  if (text.length > MAX_TEXT_LENGTH) {
+    return `Text exceeds the ${MAX_TEXT_LENGTH} character limit`;
+  }
+  return null;
+}
+
+/**
+ * Downloads a voice note received via the WhatsApp Cloud API and transcribes
+ * it with Whisper. Returns null if no OpenAI key/access token is configured,
+ * or the media/mediaId is missing, or the download/transcription fails.
+ */
+async function transcribeCloudApiVoiceNote(mediaId: string | undefined): Promise<string | null> {
+  const accessToken = process.env.WHATSAPP_ACCESS_TOKEN;
+  if (!process.env.OPENAI_API_KEY || !accessToken || !mediaId) return null;
+
+  try {
+    const mediaInfoRes = await fetch(`https://graph.facebook.com/v17.0/${mediaId}`, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+    if (!mediaInfoRes.ok) throw new Error(`Failed to fetch media info: ${mediaInfoRes.status}`);
+    const mediaInfo = await mediaInfoRes.json();
+
+    const audioRes = await fetch(mediaInfo.url, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+    if (!audioRes.ok) throw new Error(`Failed to download audio: ${audioRes.status}`);
+    const audioBuffer = Buffer.from(await audioRes.arrayBuffer());
+
+    return await transcribeAudio(audioBuffer, mediaInfo.mime_type || "audio/ogg");
+  } catch (err) {
+    fastify.log.error(err, "Failed to transcribe Cloud API voice note");
+    return null;
+  }
+}
 
 // Health check
 fastify.get("/health", async () => {
@@ -28,6 +145,10 @@ fastify.post("/v1/analyze/scam", async (request, reply) => {
   if (!body) {
     return reply.status(400).send({ error: "Missing request body" });
   }
+  const validationError = validateAnalysisInput(body.input);
+  if (validationError) {
+    return reply.status(413).send({ error: validationError });
+  }
   const result = await runAnalysis("scam", body.input, body.fixtureKey);
   return result;
 });
@@ -36,6 +157,10 @@ fastify.post("/v1/analyze/document", async (request, reply) => {
   const body = request.body as AnalysisRequest;
   if (!body) {
     return reply.status(400).send({ error: "Missing request body" });
+  }
+  const validationError = validateAnalysisInput(body.input);
+  if (validationError) {
+    return reply.status(413).send({ error: validationError });
   }
   const result = await runAnalysis("document", body.input, body.fixtureKey);
   return result;
@@ -46,6 +171,10 @@ fastify.post("/v1/analyze/page", async (request, reply) => {
   if (!body) {
     return reply.status(400).send({ error: "Missing request body" });
   }
+  const validationError = validateAnalysisInput(body.input);
+  if (validationError) {
+    return reply.status(413).send({ error: validationError });
+  }
   const result = await runAnalysis("page", body.input, body.fixtureKey);
   return result;
 });
@@ -54,6 +183,10 @@ fastify.post("/v1/analyze/voice", async (request, reply) => {
   const body = request.body as AnalysisRequest;
   if (!body) {
     return reply.status(400).send({ error: "Missing request body" });
+  }
+  const validationError = validateAnalysisInput(body.input);
+  if (validationError) {
+    return reply.status(413).send({ error: validationError });
   }
   const result = await runAnalysis("voice", body.input, body.fixtureKey);
   return result;
@@ -144,8 +277,14 @@ const processedMessageIds = new Set<string>();
 
 // WhatsApp Webhook message parser & analyzer (Meta Cloud API)
 fastify.post("/v1/webhooks/whatsapp", async (request, reply) => {
+  const signatureHeader = request.headers["x-hub-signature-256"] as string | undefined;
+  const rawBody = (request as any).rawBody as Buffer;
+  if (!isValidWhatsAppSignature(rawBody, signatureHeader)) {
+    return reply.status(401).send({ error: "Invalid signature" });
+  }
+
   const body = request.body as any;
-  
+
   if (!body || body.object !== "whatsapp_business_account") {
     return reply.status(400).send({ error: "Invalid webhook payload" });
   }
@@ -178,6 +317,7 @@ fastify.post("/v1/webhooks/whatsapp", async (request, reply) => {
         let textContent = "";
         let isImage = false;
         let isVoice = false;
+        let voiceMediaId: string | undefined;
 
         if (msgType === "text") {
           textContent = msg.text?.body || "";
@@ -186,6 +326,7 @@ fastify.post("/v1/webhooks/whatsapp", async (request, reply) => {
           textContent = msg.image?.caption || "";
         } else if (msgType === "audio") {
           isVoice = true;
+          voiceMediaId = msg.audio?.id;
         }
 
         let analysisResult;
@@ -197,7 +338,10 @@ fastify.post("/v1/webhooks/whatsapp", async (request, reply) => {
             isPrescription ? "amoxicillin-prescription" : "bank-otp"
           );
         } else if (isVoice) {
-          analysisResult = await runAnalysis("voice", { text: "Voice note" }, "voice-otp");
+          const transcript = await transcribeCloudApiVoiceNote(voiceMediaId);
+          analysisResult = transcript
+            ? await runAnalysis("voice", { text: transcript })
+            : await runAnalysis("voice", { text: "Voice note" }, "voice-otp");
         } else {
           analysisResult = await runAnalysis("scam", { text: textContent });
         }

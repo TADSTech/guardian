@@ -10,25 +10,26 @@ The dashboard should borrow the reference's calm Guardian character without copy
 - Meet WCAG AA contrast; risk must use both colour and a visible text label/icon.
 - Controls need visible keyboard focus and at least a 48px touch target where practical.
 
-## Initial tokens
+## Tokens (source of truth: `apps/web/app/globals.css`)
 
 ```css
 :root {
-  --color-brand-700: #064e3b;
-  --color-brand-600: #047857;
-  --color-brand-100: #d1fae5;
-  --color-surface: #fffcf5;
-  --color-text: #102a22;
-  --color-risk-high: #b42318;
-  --color-risk-medium: #b54708;
-  --color-risk-low: #027a48;
-  --space-1: 4px;
-  --space-2: 8px;
-  --space-4: 16px;
-  --space-6: 24px;
-  --space-8: 32px;
+  --ink: #17352b;      /* body text */
+  --cream: #fcfaf3;    /* page background */
+  --paper: #fffef9;    /* card surfaces */
+  --mint: #dcefe3;     /* light accent fill */
+  --leaf: #087449;     /* brand accent, hover states */
+  --deep: #06452e;     /* primary brand, buttons */
+  --line: #d7dfd6;     /* borders, dividers */
+  --danger: #a42922;   /* critical warnings, error text */
+  --sans: ui-sans-serif, system-ui, sans-serif;
+  --serif: Georgia, serif; /* headings */
 }
 ```
 
-Use one highly legible sans-serif family (Inter or system UI) initially. The best typography here is the kind that refuses to become a second problem for someone already worried about a scam.
+Risk colours aren't CSS custom properties — they're applied directly as Tailwind classes/inline hex values at each call site (see `apps/web/app/dashboard/page.tsx`): low/safe uses `#16a34a` (green-600), medium uses `#f59e0b` (amber-500), and high/critical uses `#dc2626` (red-600).
+
+There is no dedicated spacing token scale; components use Tailwind's default spacing utilities (`p-4`, `gap-6`, etc.) directly rather than custom `--space-*` variables.
+
+Typography is the system sans-serif stack for body copy and Georgia for headings — not Inter. The best typography here is the kind that refuses to become a second problem for someone already worried about a scam.
 

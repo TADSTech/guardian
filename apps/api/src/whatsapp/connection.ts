@@ -11,7 +11,7 @@ import pino from "pino";
 import path from "path";
 import fs from "fs/promises";
 import fsSync from "fs";
-import { runAnalysis } from "../analysis/engine";
+import { runAnalysis, transcribeAudio } from "../analysis/engine";
 import type { AnalysisResult } from "@guardian/contracts";
 
 const logger = pino({ level: "warn" });
@@ -143,11 +143,10 @@ export class GuardianWhatsApp {
               isPrescription ? "amoxicillin-prescription" : "bank-otp"
             );
           } else if (isAudio) {
-            analysisResult = await runAnalysis(
-              "voice",
-              { text: "Voice message input" },
-              "voice-otp"
-            );
+            const transcript = await this.transcribeVoiceNote(msg.message.audioMessage);
+            analysisResult = transcript
+              ? await runAnalysis("voice", { text: transcript })
+              : await runAnalysis("voice", { text: "Voice message input" }, "voice-otp");
           } else if (text) {
             // General text scan
             analysisResult = await runAnalysis("scam", { text });
@@ -168,6 +167,28 @@ export class GuardianWhatsApp {
         }
       }
     });
+  }
+
+  /**
+   * Downloads a voice note from WhatsApp and transcribes it with Whisper.
+   * Returns null if no OpenAI key is configured or the download/transcription
+   * fails, so the caller can fall back to the voice-otp fixture.
+   */
+  private async transcribeVoiceNote(audioMessage: any): Promise<string | null> {
+    if (!process.env.OPENAI_API_KEY) return null;
+
+    try {
+      const stream = await downloadContentFromMessage(audioMessage, "audio");
+      const chunks: Buffer[] = [];
+      for await (const chunk of stream) {
+        chunks.push(chunk as Buffer);
+      }
+      const audioBuffer = Buffer.concat(chunks);
+      return await transcribeAudio(audioBuffer, audioMessage.mimetype || "audio/ogg");
+    } catch (err) {
+      console.error("Failed to download WhatsApp voice note", err);
+      return null;
+    }
   }
 
   private formatReply(result: AnalysisResult): string {

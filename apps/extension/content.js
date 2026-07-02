@@ -4,6 +4,9 @@
   }
   window.guardianInitialized = true;
 
+  // Change this if the Guardian API isn't running on localhost.
+  const GUARDIAN_API_BASE_URL = "http://localhost:5000";
+
   console.log("🛡️ Guardian Safety extension injected!");
 
   // 1. Inject Styles
@@ -126,9 +129,15 @@
       font-size: 13px;
     }
 
-    /* Elderly Mode styles (applied globally) */
+    /* Elderly Mode styles (applied globally). Uses "zoom" rather than a
+       per-element font-size percentage: a percentage on body.* compounds
+       down the DOM tree (each descendant scales relative to its already-
+       enlarged parent), quickly ballooning nested elements far past 140%.
+       zoom scales the whole page once, uniformly, with no compounding. */
+    body.guardian-elderly-active {
+      zoom: 1.4;
+    }
     body.guardian-elderly-active, body.guardian-elderly-active * {
-      font-size: 110% !important;
       line-height: 1.65 !important;
       color: #000000 !important;
       background-color: #ffffff !important;
@@ -182,8 +191,14 @@
     walk(document.body);
   }
 
-  // 4. Accessibility Overlay Creation
+  // 4. Accessibility Overlay Creation. Only called after the user explicitly
+  // activates Guardian (via the toolbar popup's "Scan Page Now" button), so
+  // the floating button doesn't appear on every page unasked.
+  let overlayCreated = false;
   function createOverlay() {
+    if (overlayCreated) return;
+    overlayCreated = true;
+
     // Floating circular button
     const btn = document.createElement("button");
     btn.id = "guardian-float-btn";
@@ -277,7 +292,7 @@
       const pageText = window.getSelection().toString() || document.body.innerText.slice(0, 500);
 
       try {
-        const res = await fetch("http://localhost:5000/v1/analyze/page", {
+        const res = await fetch(`${GUARDIAN_API_BASE_URL}/v1/analyze/page`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -305,13 +320,15 @@
     });
   }
 
-  // Initialize
+  // Initialize: run the passive phishing keyword scan immediately, but wait
+  // for explicit user activation (via the toolbar popup) before showing the
+  // floating companion button and panel.
   runPhishingScan();
-  createOverlay();
 
   // Listen to messages from popup.js
   chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (message.action === "scan") {
+      createOverlay();
       runPhishingScan();
       sendResponse({ status: "done" });
     } else if (message.action === "toggleElderly") {

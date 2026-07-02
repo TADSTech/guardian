@@ -3,6 +3,7 @@
 import { useEffect, useRef } from "react";
 import { ArrowRight, Shield, HeartHandshake, Eye, Sparkles } from "lucide-react";
 import gsap from "gsap";
+import { DemoLab } from "@/components/demo-lab";
 
 const benefits = [
   {
@@ -47,6 +48,7 @@ export default function HomePage() {
         </a>
         <nav aria-label="Main navigation">
           <a href="#how-it-works" className="hover:text-[#087449] transition-colors">How it works</a>
+          <a href="#demo" className="hover:text-[#087449] transition-colors">Try it</a>
           <a href="/login" className="hover:text-[#087449] transition-colors">Sign in</a>
         </nav>
         <a className="header-cta hover:text-[#087449] hover:border-[#087449] transition-colors" href="/login">
@@ -92,6 +94,15 @@ export default function HomePage() {
               </article>
             ))}
           </div>
+        </section>
+
+        <section className="demo-section" id="demo" aria-labelledby="demo-title">
+          <div className="demo-intro">
+            <p className="eyebrow">Try it yourself</p>
+            <h2 id="demo-title">See what Guardian sounds like.</h2>
+            <p>Pick a prepared example below—no sign-up needed.</p>
+          </div>
+          <DemoLab />
         </section>
       </main>
 

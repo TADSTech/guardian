@@ -8,8 +8,8 @@ This document details the branding, layout, and visual marketing assets that nee
 * **Objective**: Establish a trusted, recognizable, and warm brand system that resonates with family caregivers.
 * **Deliverables**:
   * [ ] **Logo Mark**: A clean emblem combining a shield (security) and a heart or handshake (empathy/care).
-  * [ ] **Color Palette Specs**: Document HSL codes for the Deep Forest Green (`#032f22`), Warm Cream (`#fbfaf5`), Alert Orange, and Soft Sage accents.
-  * [ ] **Typography Guide**: Standardize fonts for header styling (e.g., *Outfit* or *Playfair Display*) and body accessibility (e.g., *Inter* or *Open Sans*).
+  * [ ] **Color Palette Specs**: The implemented palette (see `docs/design-system.md`) uses Deep Green (`#06452e`), Leaf accent (`#087449`), Warm Cream (`#fcfaf3`), and Danger red (`#a42922`) — document official HSL/brand-guideline codes for these rather than introducing new ones.
+  * [ ] **Typography Guide**: The implementation already uses Georgia (serif, headings) and the system sans-serif stack (body) — confirm these as final or produce brand-approved replacements, rather than defaulting to Outfit/Playfair/Inter/Open Sans.
 
 ---
 

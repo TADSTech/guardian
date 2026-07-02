@@ -11,27 +11,23 @@ import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
 import { MessageSquare, AppWindow, ShieldAlert, ShieldCheck, ShieldQuestion, Globe, Settings, History, ArrowRight, Loader2, Users, Download, FileText, AlertTriangle, CheckCircle2, Upload, ImageIcon } from "lucide-react";
 import { GoogleTranslate } from "@/components/google-translate";
+import { API_BASE_URL } from "@/lib/api";
 import type { AnalysisResult } from "@guardian/contracts";
-import { Tooltip, Zoom } from "@mui/material";
+import { Tooltip } from "@mui/material";
 import gsap from "gsap";
 
-const familyMembers = [
-  { id: 1, name: "Mama (Mother)", role: "Elderly", status: "Protected", alerts: 2, lastActive: "10 mins ago", device: "WhatsApp Bot" },
-  { id: 2, name: "Tunde (Son)", role: "Child", status: "Needs Attention", alerts: 5, lastActive: "Just now", device: "Browser Extension" },
-];
-
-const familyAlerts = [
-  { id: 101, member: "Tunde (Son)", type: "Phishing Link Blocked", details: "Attempted to open a known fake Roblox login page.", date: "1 hour ago", severity: "High" },
-  { id: 102, member: "Mama (Mother)", type: "Suspicious Voice Note", details: "Received VN asking for bank BVN. Intercepted and warned.", date: "3 hours ago", severity: "Critical" },
-  { id: 104, member: "Tunde (Son)", type: "Inappropriate Content Filtered", details: "Blocked access to an adult content site on the laptop.", date: "Yesterday", severity: "High" },
-  { id: 103, member: "Mama (Mother)", type: "Medical Info Simplified", details: "Requested simplification for diabetes medication instructions.", date: "Yesterday", severity: "Info" },
-];
-
+// Fallback content shown before the real scan history loads (or if the API
+// is unreachable). Real data comes from GET /v1/analyze/history.
 const recentScans = [
   { id: 1, type: "WhatsApp Message", excerpt: "Your account will be suspended. Click here to verify...", risk: "Critical", date: "2 hours ago" },
   { id: 2, type: "Medical Document", excerpt: "Prescription: Amoxicillin 500mg, take 3 times daily...", risk: "Safe", date: "Yesterday" },
   { id: 3, type: "Voice Note", excerpt: "Hello, this is customer service. We need your BVN...", risk: "High Risk", date: "2 days ago" },
 ];
+
+function escapeCsvField(field: string): string {
+  const escaped = field.replace(/"/g, '""');
+  return /[",\n]/.test(field) ? `"${escaped}"` : escaped;
+}
 
 export default function DashboardPage() {
   const router = useRouter();
@@ -43,7 +39,7 @@ export default function DashboardPage() {
   const [isScanning, setIsScanning] = useState(false);
   const [scanResult, setScanResult] = useState<AnalysisResult | null>(null);
 
-  const [exportState, setExportState] = useState<"idle" | "loading" | "error">("idle");
+  const [exportState, setExportState] = useState<"idle" | "loading" | "error" | "success">("idle");
 
   // Scans history state
   const [scansHistory, setScansHistory] = useState<any[]>(recentScans);
@@ -57,7 +53,7 @@ export default function DashboardPage() {
 
   const fetchScansHistory = async () => {
     try {
-      const res = await fetch("http://localhost:5000/v1/analyze/history");
+      const res = await fetch(`${API_BASE_URL}/v1/analyze/history`);
       if (res.ok) {
         const data = await res.json();
         if (data && data.length > 0) {
@@ -93,7 +89,7 @@ export default function DashboardPage() {
     
     const checkStatus = async () => {
       try {
-        const res = await fetch("http://localhost:5000/v1/whatsapp/status");
+        const res = await fetch(`${API_BASE_URL}/v1/whatsapp/status`);
         if (res.ok) {
           const data = await res.json();
           setWaStatus(data.status);
@@ -123,14 +119,14 @@ export default function DashboardPage() {
   const handleConnectWhatsApp = async () => {
     setWaConnecting(true);
     try {
-      const res = await fetch("http://localhost:5000/v1/whatsapp/connect", {
+      const res = await fetch(`${API_BASE_URL}/v1/whatsapp/connect`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ phoneNumber: waPhoneNumber }),
       });
       if (res.ok) {
         // Fetch status immediately to show state change
-        const statusRes = await fetch("http://localhost:5000/v1/whatsapp/status");
+        const statusRes = await fetch(`${API_BASE_URL}/v1/whatsapp/status`);
         if (statusRes.ok) {
           const statusData = await statusRes.json();
           setWaStatus(statusData.status);
@@ -147,7 +143,7 @@ export default function DashboardPage() {
 
   const handleDisconnectWhatsApp = async () => {
     try {
-      const res = await fetch("http://localhost:5000/v1/whatsapp/disconnect", {
+      const res = await fetch(`${API_BASE_URL}/v1/whatsapp/disconnect`, {
         method: "POST",
       });
       if (res.ok) {
@@ -181,7 +177,7 @@ export default function DashboardPage() {
       }
 
       const endpoint = source === "image" ? "document" : "scam";
-      const res = await fetch(`http://localhost:5000/v1/analyze/${endpoint}`, {
+      const res = await fetch(`${API_BASE_URL}/v1/analyze/${endpoint}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -215,13 +211,63 @@ export default function DashboardPage() {
     }
   };
 
-  const handleExport = () => {
+  const handleExportCsv = async () => {
     setExportState("loading");
-    setTimeout(() => {
+    try {
+      const res = await fetch(`${API_BASE_URL}/v1/analyze/history`);
+      if (!res.ok) throw new Error("Failed to fetch scan history");
+      const records: { type: string; risk: string; excerpt: string; date: string }[] = await res.json();
+
+      const rows = [["Type", "Risk Level", "Details", "Date"], ...records.map(r => [r.type, r.risk, r.excerpt, r.date])];
+      const csv = rows.map(row => row.map(escapeCsvField).join(",")).join("\n");
+
+      const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8;" }));
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `guardian-incident-report-${new Date().toISOString().slice(0, 10)}.csv`;
+      link.click();
+      URL.revokeObjectURL(url);
+
+      setExportState("success");
+    } catch (err) {
+      console.error("CSV export failed", err);
       setExportState("error");
-    }, 2500);
+    }
   };
 
+  // Real connection status for the WhatsApp-connected member. The Browser
+  // Extension member has no telemetry channel back to the API yet, so it's
+  // shown as an example rather than asserted as live-protected.
+  const highRiskScanCount = scansHistory.filter((scan) => scan.risk === "Critical" || scan.risk === "High Risk").length;
+  const familyMembers = [
+    {
+      id: 1,
+      name: "Mama (Mother)",
+      role: "Elderly",
+      status: waStatus === "CONNECTED" ? "Protected" : "Not Connected",
+      alerts: highRiskScanCount,
+      lastActive: waStatus === "CONNECTED" ? "Active now" : "WhatsApp Bot not linked",
+      device: "WhatsApp Bot",
+    },
+    {
+      id: 2,
+      name: "Tunde (Son)",
+      role: "Child",
+      status: "Example",
+      alerts: 0,
+      lastActive: "Install the Chrome extension to activate live protection",
+      device: "Browser Extension",
+    },
+  ];
+
+  // Real incidents come from GET /v1/analyze/history via scansHistory.
+  const familyAlerts = scansHistory.map((scan) => ({
+    id: scan.id,
+    type: scan.type,
+    details: scan.excerpt,
+    date: scan.date,
+    severity: scan.risk === "Critical" ? "Critical" : scan.risk === "High Risk" ? "High" : "Info",
+  }));
 
   if (!userEmail) return null;
 
@@ -323,10 +369,7 @@ export default function DashboardPage() {
                       {familyAlerts.map(alert => (
                         <div key={alert.id} className="p-4 bg-gray-50 rounded-xl border-l-4" style={{ borderLeftColor: alert.severity === 'Critical' ? '#dc2626' : alert.severity === 'High' ? '#ea580c' : '#3b82f6' }}>
                           <div className="flex justify-between items-start mb-1">
-                            <div>
-                              <Badge variant="outline" className="mb-2 bg-white">{alert.member}</Badge>
-                              <h4 className="font-bold text-sm">{alert.type}</h4>
-                            </div>
+                            <h4 className="font-bold text-sm">{alert.type}</h4>
                             <span className="text-xs text-gray-400">{alert.date}</span>
                           </div>
                           <p className="text-sm text-gray-600 mt-1">{alert.details}</p>
@@ -707,47 +750,14 @@ export default function DashboardPage() {
                     <div className="p-4 bg-white rounded-xl shadow-sm"><FileText className="w-8 h-8 text-green-700" /></div>
                     <div>
                       <h3 className="font-bold text-lg">Monthly Safety Report</h3>
-                      <p className="text-sm text-gray-500">Contains all intercepted threats and warnings from the last 30 days.</p>
+                      <p className="text-sm text-gray-500">PDF summaries aren't built yet — use the CSV incident report below in the meantime.</p>
                     </div>
                   </div>
-                  <Dialog onOpenChange={(open) => { if (!open) setExportState("idle"); }}>
-                    <DialogTrigger
-                      render={
-                        <Button className="w-full sm:w-auto bg-green-700 hover:bg-green-800"><Download className="w-4 h-4 mr-2" /> Download PDF</Button>
-                      }
-                    />
-                    <DialogContent>
-                      <DialogHeader>
-                        <DialogTitle>Monthly Safety Report (PDF)</DialogTitle>
-                      </DialogHeader>
-                      <div className="py-6 flex flex-col items-center justify-center text-center space-y-4">
-                        {exportState === "idle" && (
-                          <>
-                            <p className="text-gray-500 mb-4">Generate a comprehensive summary of all intercepted threats for the last 30 days.</p>
-                            <Button onClick={handleExport} className="w-full bg-green-700 hover:bg-green-800">
-                              Start Export
-                            </Button>
-                          </>
-                        )}
-                        {exportState === "loading" && (
-                          <>
-                            <Loader2 className="w-8 h-8 animate-spin text-green-700" />
-                            <p className="text-gray-600">Gathering data and generating PDF securely...</p>
-                          </>
-                        )}
-                        {exportState === "error" && (
-                          <>
-                            <AlertTriangle className="w-8 h-8 text-red-600" />
-                            <p className="text-red-600 font-medium">Export failed due to network timeout.</p>
-                            <p className="text-sm text-gray-500">Please try again later.</p>
-                            <Button onClick={() => setExportState("idle")} variant="outline" className="w-full mt-4">
-                              Retry
-                            </Button>
-                          </>
-                        )}
-                      </div>
-                    </DialogContent>
-                  </Dialog>
+                  <Tooltip title="PDF report generation is not implemented yet">
+                    <span>
+                      <Button disabled className="w-full sm:w-auto bg-green-700 hover:bg-green-800"><Download className="w-4 h-4 mr-2" /> Download PDF (coming soon)</Button>
+                    </span>
+                  </Tooltip>
                 </div>
 
                 <div className="p-6 border rounded-2xl flex flex-col sm:flex-row items-center justify-between gap-4 bg-gray-50" style={{ borderColor: "var(--line)" }}>
@@ -772,7 +782,7 @@ export default function DashboardPage() {
                         {exportState === "idle" && (
                           <>
                             <p className="text-gray-500 mb-4">Download detailed logs of high-risk scams suitable for bank reports.</p>
-                            <Button onClick={handleExport} className="w-full bg-red-600 hover:bg-red-700 text-white">
+                            <Button onClick={handleExportCsv} className="w-full bg-red-600 hover:bg-red-700 text-white">
                               Start Export
                             </Button>
                           </>
@@ -783,12 +793,22 @@ export default function DashboardPage() {
                             <p className="text-gray-600">Compiling incident logs into CSV format...</p>
                           </>
                         )}
+                        {exportState === "success" && (
+                          <>
+                            <CheckCircle2 className="w-8 h-8 text-green-600" />
+                            <p className="text-green-700 font-medium">CSV downloaded.</p>
+                            <p className="text-sm text-gray-500">Check your browser's downloads folder.</p>
+                            <Button onClick={handleExportCsv} variant="outline" className="w-full mt-4">
+                              Download again
+                            </Button>
+                          </>
+                        )}
                         {exportState === "error" && (
                           <>
                             <AlertTriangle className="w-8 h-8 text-red-600" />
-                            <p className="text-red-600 font-medium">Export failed due to network timeout.</p>
+                            <p className="text-red-600 font-medium">Export failed — could not reach the Guardian API.</p>
                             <p className="text-sm text-gray-500">Please try again later.</p>
-                            <Button onClick={() => setExportState("idle")} variant="outline" className="w-full mt-4">
+                            <Button onClick={handleExportCsv} variant="outline" className="w-full mt-4">
                               Retry
                             </Button>
                           </>

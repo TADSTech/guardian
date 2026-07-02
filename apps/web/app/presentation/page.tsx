@@ -5,6 +5,8 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ShieldCheck, ShieldAlert, ShieldQuestion, Loader2, ArrowLeft, Volume2, Download, AlertTriangle, Activity, Mic, Lightbulb } from "lucide-react";
+import { API_BASE_URL } from "@/lib/api";
+import { demoFixtures } from "@guardian/demo-fixtures";
 import type { AnalysisResult } from "@guardian/contracts";
 import { Tooltip, Zoom } from "@mui/material";
 import gsap from "gsap";
@@ -58,7 +60,7 @@ export default function PresentationPage() {
 
     try {
       const endpoint = scenario.id === "document" ? "document" : scenario.id === "voice" ? "voice" : "scam";
-      const res = await fetch(`http://localhost:5000/v1/analyze/${endpoint}`, {
+      const res = await fetch(`${API_BASE_URL}/v1/analyze/${endpoint}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -74,38 +76,10 @@ export default function PresentationPage() {
         throw new Error();
       }
     } catch (err) {
-      // Mock Fallback
-      if (scenario.id === "scam") {
-        setResult({
-          kind: "scam",
-          riskLevel: "high",
-          riskScore: 95,
-          explanation: "This is a classic phishing scam. The sender creates urgent pressure ('closed today') to get you to give away your secret codes (OTP). Banks will never ask for this information.",
-          evidence: ["Asks for secret OTP code", "Creates artificial urgency"],
-          actions: ["Do NOT share your OTP.", "Delete the message immediately.", "Call your bank back on the number printed on your card."],
-          disclaimer: "Guardian automatic safety assessment."
-        });
-      } else if (scenario.id === "document") {
-        setResult({
-          kind: "document",
-          riskLevel: "low",
-          riskScore: 10,
-          explanation: "This prescription is for Amoxicillin, which is an antibiotic. The dosage is 500mg, taken 3 times a day.",
-          evidence: ["Medication: Amoxicillin 500mg", "Schedule: 3 times daily"],
-          actions: ["Complete the entire bottle even if you feel better.", "Contact your doctor if you experience side effects."],
-          disclaimer: "Informational summary only. Consult a clinician for medical decisions."
-        });
-      } else {
-        setResult({
-          kind: "voice",
-          riskLevel: "high",
-          riskScore: 90,
-          explanation: "A voice note requesting verification codes (OTP). Legitimate companies will never request authentication keys over a call or voice message.",
-          evidence: ["Requests verification keys"],
-          actions: ["Hang up or ignore the message.", "Ensure 2-Step verification is enabled on WhatsApp."],
-          disclaimer: "Guardian automated voice check."
-        });
-      }
+      // Offline fallback: use the same fixture data the real API would have
+      // returned, so a dead API doesn't show a different story than a live one.
+      const fixture = demoFixtures.find((f) => f.id === scenario.fixtureKey);
+      if (fixture) setResult(fixture.result);
     } finally {
       setIsAnalyzing(false);
     }
