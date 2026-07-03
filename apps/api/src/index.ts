@@ -417,7 +417,7 @@ ${analysisResult.actions.map((a, i) => `${i + 1}️⃣ ${a}`).join("\n")}
 // Serve static frontend files
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-const webOutDir = path.resolve(__dirname, "../../../web/out");
+const webOutDir = path.resolve(__dirname, "../../../apps/web/out");
 
 await fastify.register(fastifyStatic, {
   root: webOutDir,
