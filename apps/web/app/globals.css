@@ -10,3 +10,54 @@
     @apply bg-background text-foreground;}
   html {
     @apply font-sans;}}
+
+/* Google Translate widget overrides. Google's default "Select Language"
+   widget renders as a bordered, boxy dropdown with its own fonts/spacing
+   that clashes with the rest of the header — this strips that box styling
+   down to a plain inline link so it matches the surrounding nav text.
+   !important is needed because Google injects its own stylesheet. */
+#google_translate_element .goog-te-gadget {
+  font-size: 0 !important; /* hides Google's "Powered by" trailer text */
+}
+#google_translate_element .goog-te-gadget-simple {
+  background-color: transparent !important;
+  border: none !important;
+  padding: 0 !important;
+  display: inline-flex !important;
+  align-items: center !important;
+}
+#google_translate_element .goog-te-gadget-icon {
+  display: none !important;
+}
+#google_translate_element a,
+#google_translate_element a:visited,
+#google_translate_element span {
+  color: var(--ink) !important;
+  font-family: var(--sans) !important;
+  font-size: 0.875rem !important;
+  font-weight: 500 !important;
+  text-decoration: none !important;
+}
+#google_translate_element a:hover {
+  color: var(--leaf) !important;
+}
+/* Google lays the link's text/spacer-icons/arrow out as separate inline
+   elements with no shared flex container, so they wrap onto their own line
+   in a narrow header slot. Force them onto one row and drop the decorative
+   divider bar Google draws with an inline border-left style. */
+#google_translate_element .goog-te-gadget-simple a {
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 2px !important;
+}
+#google_translate_element .goog-te-gadget-simple a span[style*="border-left"] {
+  display: none !important;
+}
+/* The banner Google injects at the top of the page after switching language
+   pushes all page content down; hide it and undo the offset it adds to body. */
+.goog-te-banner-frame {
+  display: none !important;
+}
+body {
+  top: 0 !important;
+}

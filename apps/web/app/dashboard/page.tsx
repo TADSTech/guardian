@@ -15,6 +15,7 @@ import { API_BASE_URL } from "@/lib/api";
 import type { AnalysisResult } from "@guardian/contracts";
 import { Tooltip } from "@mui/material";
 import gsap from "gsap";
+import { jsPDF } from "jspdf";
 
 // Fallback content shown before the real scan history loads (or if the API
 // is unreachable). Real data comes from GET /v1/analyze/history.
@@ -231,6 +232,67 @@ export default function DashboardPage() {
       setExportState("success");
     } catch (err) {
       console.error("CSV export failed", err);
+      setExportState("error");
+    }
+  };
+
+  const handleExportPdf = async () => {
+    setExportState("loading");
+    try {
+      const res = await fetch(`${API_BASE_URL}/v1/analyze/history`);
+      if (!res.ok) throw new Error("Failed to fetch scan history");
+      const records: { type: string; risk: string; excerpt: string; date: string }[] = await res.json();
+
+      const doc = new jsPDF();
+      const marginX = 14;
+      const pageBottom = 280;
+      let y = 20;
+
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(18);
+      doc.text("Guardian Monthly Safety Report", marginX, y);
+      y += 7;
+
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(10);
+      doc.setTextColor(120);
+      doc.text(`Generated ${new Date().toLocaleString()}`, marginX, y);
+      doc.setTextColor(0);
+      y += 10;
+
+      if (records.length === 0) {
+        doc.setFontSize(11);
+        doc.text("No incidents recorded yet.", marginX, y);
+      }
+
+      for (const record of records) {
+        if (y > pageBottom) {
+          doc.addPage();
+          y = 20;
+        }
+
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(11);
+        doc.text(`${record.type} - ${record.risk}`, marginX, y);
+        y += 5;
+
+        doc.setFont("helvetica", "normal");
+        doc.setFontSize(9);
+        doc.setTextColor(90);
+        const wrappedExcerpt = doc.splitTextToSize(record.excerpt, 180) as string[];
+        doc.text(wrappedExcerpt, marginX, y);
+        y += wrappedExcerpt.length * 4.5;
+
+        doc.setFontSize(8);
+        doc.text(record.date, marginX, y);
+        doc.setTextColor(0);
+        y += 8;
+      }
+
+      doc.save(`guardian-safety-report-${new Date().toISOString().slice(0, 10)}.pdf`);
+      setExportState("success");
+    } catch (err) {
+      console.error("PDF export failed", err);
       setExportState("error");
     }
   };
@@ -750,14 +812,57 @@ export default function DashboardPage() {
                     <div className="p-4 bg-white rounded-xl shadow-sm"><FileText className="w-8 h-8 text-green-700" /></div>
                     <div>
                       <h3 className="font-bold text-lg">Monthly Safety Report</h3>
-                      <p className="text-sm text-gray-500">PDF summaries aren't built yet — use the CSV incident report below in the meantime.</p>
+                      <p className="text-sm text-gray-500">Contains all intercepted threats and warnings from your scan history.</p>
                     </div>
                   </div>
-                  <Tooltip title="PDF report generation is not implemented yet">
-                    <span>
-                      <Button disabled className="w-full sm:w-auto bg-green-700 hover:bg-green-800"><Download className="w-4 h-4 mr-2" /> Download PDF (coming soon)</Button>
-                    </span>
-                  </Tooltip>
+                  <Dialog onOpenChange={(open) => { if (!open) setExportState("idle"); }}>
+                    <DialogTrigger
+                      render={
+                        <Button className="w-full sm:w-auto bg-green-700 hover:bg-green-800"><Download className="w-4 h-4 mr-2" /> Download PDF</Button>
+                      }
+                    />
+                    <DialogContent>
+                      <DialogHeader>
+                        <DialogTitle>Monthly Safety Report (PDF)</DialogTitle>
+                      </DialogHeader>
+                      <div className="py-6 flex flex-col items-center justify-center text-center space-y-4">
+                        {exportState === "idle" && (
+                          <>
+                            <p className="text-gray-500 mb-4">Generate a summary of all intercepted threats from your scan history.</p>
+                            <Button onClick={handleExportPdf} className="w-full bg-green-700 hover:bg-green-800">
+                              Start Export
+                            </Button>
+                          </>
+                        )}
+                        {exportState === "loading" && (
+                          <>
+                            <Loader2 className="w-8 h-8 animate-spin text-green-700" />
+                            <p className="text-gray-600">Gathering data and generating PDF...</p>
+                          </>
+                        )}
+                        {exportState === "success" && (
+                          <>
+                            <CheckCircle2 className="w-8 h-8 text-green-600" />
+                            <p className="text-green-700 font-medium">PDF downloaded.</p>
+                            <p className="text-sm text-gray-500">Check your browser's downloads folder.</p>
+                            <Button onClick={handleExportPdf} variant="outline" className="w-full mt-4">
+                              Download again
+                            </Button>
+                          </>
+                        )}
+                        {exportState === "error" && (
+                          <>
+                            <AlertTriangle className="w-8 h-8 text-red-600" />
+                            <p className="text-red-600 font-medium">Export failed — could not reach the Guardian API.</p>
+                            <p className="text-sm text-gray-500">Please try again later.</p>
+                            <Button onClick={handleExportPdf} variant="outline" className="w-full mt-4">
+                              Retry
+                            </Button>
+                          </>
+                        )}
+                      </div>
+                    </DialogContent>
+                  </Dialog>
                 </div>
 
                 <div className="p-6 border rounded-2xl flex flex-col sm:flex-row items-center justify-between gap-4 bg-gray-50" style={{ borderColor: "var(--line)" }}>
