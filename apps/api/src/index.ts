@@ -9,6 +9,7 @@ import type { AnalysisRequest } from "@guardian/contracts";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import fastifyStatic from "@fastify/static";
+import fs from "node:fs";
 
 // Requests larger than this are rejected outright. Sized to comfortably fit
 // a base64-encoded 5MB image (which inflates to ~6.7MB) plus JSON overhead.
@@ -425,12 +426,23 @@ await fastify.register(fastifyStatic, {
   wildcard: false,
 });
 
-// SPA Routing Fallback: serve index.html for client-side routing
+// SPA Routing Fallback: serve index.html or specific clean URL page.html files
 fastify.setNotFoundHandler((request, reply) => {
   const url = request.raw.url || "";
   if (url.startsWith("/v1") || url.startsWith("/health")) {
     return reply.status(404).send({ error: "Not found" });
   }
+
+  const pathname = url.split("?")[0];
+  const cleanPath = pathname.endsWith("/") ? pathname.slice(0, -1) : pathname;
+
+  if (cleanPath && cleanPath !== "/") {
+    const htmlFilePath = path.join(webOutDir, `${cleanPath}.html`);
+    if (fs.existsSync(htmlFilePath) && fs.statSync(htmlFilePath).isFile()) {
+      return reply.sendFile(`${cleanPath}.html`);
+    }
+  }
+
   return reply.sendFile("index.html");
 });
 
