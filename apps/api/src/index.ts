@@ -46,7 +46,11 @@ await fastify.register(cors, {
 await fastify.register(rateLimit, {
   max: 30,
   timeWindow: "1 minute",
-});
+  allowList: (request: any) => {
+    const url = request.raw.url || "";
+    return url.includes("/whatsapp/status") || url.includes("/health");
+  }
+} as any);
 
 // Keep the raw request bytes around so the WhatsApp webhook can verify
 // Meta's HMAC signature, which is computed over the exact bytes sent
