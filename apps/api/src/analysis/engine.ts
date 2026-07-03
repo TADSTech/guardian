@@ -91,7 +91,7 @@ export async function transcribeAudioAssemblyAI(audioBuffer: Buffer, mimeType: s
         "authorization": apiKey,
         "content-type": "application/octet-stream"
       },
-      body: audioBuffer
+      body: new Uint8Array(audioBuffer)
     });
 
     if (!uploadResponse.ok) {

@@ -252,7 +252,7 @@ export class GuardianWhatsApp {
           } else {
             // Unsupported content (stickers, contacts, locations, polls, etc.)
             const ownerJid = this.getOwnerJid();
-            if (ownerJid) {
+            if (ownerJid && this.sock) {
               await this.sock.sendMessage(ownerJid, {
                 text: `🛡️ *Guardian Helper*\n\nReceived an unsupported message type from ${remoteJid}. You can forward suspicious texts, images, voice notes, or documents.`,
               });
@@ -269,7 +269,9 @@ export class GuardianWhatsApp {
             continue;
           }
           const replyText = this.formatReply(analysisResult, remoteJid);
-          await this.sock.sendMessage(ownerJid, { text: replyText });
+          if (this.sock) {
+            await this.sock.sendMessage(ownerJid, { text: replyText });
+          }
 
         } catch (err) {
           console.error("Error processing message", err);

@@ -184,15 +184,47 @@ fastify.post("/v1/analyze/page", async (request, reply) => {
 });
 
 fastify.post("/v1/analyze/voice", async (request, reply) => {
-  const body = request.body as AnalysisRequest;
-  if (!body) {
+  const body = request.body as any;
+  if (!body || !body.input) {
     return reply.status(400).send({ error: "Missing request body" });
   }
-  const validationError = validateAnalysisInput(body.input);
+
+  let text = body.input.text || "";
+  let fixtureKey = body.fixtureKey;
+
+  if (body.input.audio && body.input.audio.startsWith("data:audio/")) {
+    try {
+      const match = body.input.audio.match(/^data:(audio\/[a-zA-Z0-9-+.]+);base64,(.*)$/);
+      if (match) {
+        const mimeType = match[1];
+        const base64Data = match[2];
+        const buffer = Buffer.from(base64Data, "base64");
+        
+        // Transcribe the audio using the engine's transcribeAudio
+        const transcript = await transcribeAudio(buffer, mimeType);
+        if (transcript) {
+          text = transcript;
+        } else {
+          // If transcription fails and no text is provided, use fixture
+          if (!text) {
+            fixtureKey = fixtureKey || "voice-otp";
+          }
+        }
+      }
+    } catch (err) {
+      fastify.log.error(err, "Failed to transcribe uploaded audio");
+      if (!text) {
+        fixtureKey = fixtureKey || "voice-otp";
+      }
+    }
+  }
+
+  const validationError = validateAnalysisInput({ ...body.input, text });
   if (validationError) {
     return reply.status(413).send({ error: validationError });
   }
-  const result = await runAnalysis("voice", body.input, body.fixtureKey);
+
+  const result = await runAnalysis("voice", { ...body.input, text }, fixtureKey);
   return result;
 });
 

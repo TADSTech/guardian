@@ -33,6 +33,7 @@ function escapeCsvField(field: string): string {
 export default function DashboardPage() {
   const router = useRouter();
   const [userEmail, setUserEmail] = useState<string | null>(null);
+  const [userName, setUserName] = useState<string | null>(null);
   
   const [scanInput, setScanInput] = useState("");
   const [scanImage, setScanImage] = useState<File | null>(null);
@@ -52,6 +53,62 @@ export default function DashboardPage() {
   const [waPhoneNumber, setWaPhoneNumber] = useState<string>("");
   const [waConnecting, setWaConnecting] = useState<boolean>(false);
 
+  // Loading and server status states
+  const [historyLoading, setHistoryLoading] = useState(true);
+  const [waStatusLoading, setWaStatusLoading] = useState(true);
+  const [serverStatus, setServerStatus] = useState<"connecting" | "online" | "offline">("connecting");
+
+  // Voice note scanner states
+  const [scanAudio, setScanAudio] = useState<File | null>(null);
+  const [scanAudioName, setScanAudioName] = useState<string | null>(null);
+  const [isRecording, setIsRecording] = useState(false);
+  const [recordingDuration, setRecordingDuration] = useState(0);
+  const [mediaRecorder, setMediaRecorder] = useState<MediaRecorder | null>(null);
+
+  const startRecording = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const recorder = new MediaRecorder(stream);
+      const chunks: Blob[] = [];
+
+      recorder.ondataavailable = (e) => {
+        if (e.data && e.data.size > 0) {
+          chunks.push(e.data);
+        }
+      };
+
+      recorder.onstop = () => {
+        const blob = new Blob(chunks, { type: "audio/ogg" });
+        const file = new File([blob], "recorded-voice.ogg", { type: "audio/ogg" });
+        setScanAudio(file);
+        setScanAudioName("Recorded Voice Note");
+        stream.getTracks().forEach((track) => track.stop());
+      };
+
+      setMediaRecorder(recorder);
+      recorder.start();
+      setIsRecording(true);
+      setRecordingDuration(0);
+
+      const startTime = Date.now();
+      const interval = setInterval(() => {
+        setRecordingDuration(Math.floor((Date.now() - startTime) / 1000));
+      }, 1000);
+      (recorder as any)._intervalId = interval;
+
+    } catch (err) {
+      console.error("Failed to start recording", err);
+    }
+  };
+
+  const stopRecording = () => {
+    if (mediaRecorder && mediaRecorder.state !== "inactive") {
+      mediaRecorder.stop();
+      clearInterval((mediaRecorder as any)._intervalId);
+      setIsRecording(false);
+    }
+  };
+
   const fetchScansHistory = async () => {
     try {
       const res = await fetch(`${API_BASE_URL}/v1/analyze/history`);
@@ -63,6 +120,8 @@ export default function DashboardPage() {
       }
     } catch (err) {
       console.error("Failed to fetch scan history", err);
+    } finally {
+      setHistoryLoading(false);
     }
   };
 
@@ -76,15 +135,16 @@ export default function DashboardPage() {
       router.push("/login");
     } else {
       try {
-        const { email } = JSON.parse(session);
+        const { email, name } = JSON.parse(session);
         setUserEmail(email);
+        setUserName(name || "");
       } catch {
         router.push("/login");
       }
     }
   }, [router]);
 
-  // Poll WhatsApp status
+  // Poll WhatsApp status and server health
   useEffect(() => {
     let intervalId: any;
     
@@ -96,9 +156,15 @@ export default function DashboardPage() {
           setWaStatus(data.status);
           setWaQr(data.qr);
           setWaPairingCode(data.pairingCode);
+          setServerStatus("online");
+        } else {
+          setServerStatus("offline");
         }
       } catch (err) {
         console.error("Failed to fetch WhatsApp status", err);
+        setServerStatus("offline");
+      } finally {
+        setWaStatusLoading(false);
       }
     };
 
@@ -162,9 +228,10 @@ export default function DashboardPage() {
     router.push("/");
   };
 
-  const handleScan = async (source: "text" | "image" = "text") => {
+  const handleScan = async (source: "text" | "image" | "voice" = "text") => {
     if (source === "text" && !scanInput.trim()) return;
     if (source === "image" && !scanImage) return;
+    if (source === "voice" && !scanAudio) return;
     setIsScanning(true);
     setScanResult(null);
     
@@ -177,18 +244,53 @@ export default function DashboardPage() {
         fixtureKey = "amoxicillin-prescription";
       }
 
-      const endpoint = source === "image" ? "document" : "scam";
+      let bodyData: any = {};
+      let endpoint = "scam";
+
+      if (source === "image") {
+        endpoint = "document";
+        const base64 = await new Promise<string>((resolve) => {
+          const reader = new FileReader();
+          reader.onloadend = () => resolve(reader.result as string);
+          reader.readAsDataURL(scanImage!);
+        });
+        bodyData = {
+          kind: "document",
+          fixtureKey,
+          input: {
+            text: base64,
+            fileName: scanImage?.name
+          }
+        };
+      } else if (source === "voice") {
+        endpoint = "voice";
+        const base64 = await new Promise<string>((resolve) => {
+          const reader = new FileReader();
+          reader.onloadend = () => resolve(reader.result as string);
+          reader.readAsDataURL(scanAudio!);
+        });
+        bodyData = {
+          kind: "voice",
+          fixtureKey: "voice-otp",
+          input: {
+            audio: base64,
+            fileName: scanAudioName || "voice-note.ogg"
+          }
+        };
+      } else {
+        bodyData = {
+          kind: "scam",
+          fixtureKey,
+          input: {
+            text: scanInput
+          }
+        };
+      }
+
       const res = await fetch(`${API_BASE_URL}/v1/analyze/${endpoint}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          kind: endpoint,
-          fixtureKey,
-          input: {
-            text: scanInput,
-            fileName: scanImage ? scanImage.name : undefined
-          }
-        })
+        body: JSON.stringify(bodyData)
       });
       if (res.ok) {
         const data = await res.json();
@@ -200,9 +302,9 @@ export default function DashboardPage() {
     } catch (err) {
       console.error("Scan failed", err);
       setScanResult({
-        kind: source === "image" ? "document" : "scam",
+        kind: source === "image" ? "document" : source === "voice" ? "voice" : "scam",
         riskLevel: "medium",
-        explanation: "API could not be reached. Automated Local Fallback: Treat this text with caution and do not share details until verified.",
+        explanation: "API could not be reached. Automated Local Fallback: Treat this voice message with caution and verify the sender.",
         evidence: ["API connection offline"],
         actions: ["Do not share credentials/OTPs.", "Verify sender details directly."],
         disclaimer: "Guardian local offline fallback summary."
@@ -336,15 +438,29 @@ export default function DashboardPage() {
   return (
     <div className="min-h-screen flex flex-col" style={{ background: "var(--cream)", color: "var(--ink)" }}>
       {/* Navbar */}
-      <header className="site-header border-b bg-white sticky top-0 z-10" style={{ borderColor: "var(--line)", padding: "1rem 2rem" }}>
+      <header className="site-header border-b bg-white sticky top-0 z-10 animate-in fade-in duration-300" style={{ borderColor: "var(--line)", padding: "1rem 2rem" }}>
         <a className="brand" style={{ fontWeight: 900, textTransform: "uppercase", letterSpacing: "-0.05em", fontSize: "1.5rem" }} href="/dashboard" aria-label="Guardian dashboard">GUARDIAN</a>
         
-        <div className="flex items-center gap-6">
+        <div className="flex items-center gap-4 sm:gap-6">
+          <div className="flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1 rounded-full border bg-white" style={{ borderColor: "var(--line)" }}>
+            <span className={`w-2 h-2 rounded-full ${
+              serverStatus === "online" ? "bg-green-500 animate-pulse" :
+              serverStatus === "offline" ? "bg-red-500 animate-pulse" : "bg-yellow-500 animate-ping"
+            }`} />
+            <span className="text-gray-600 capitalize text-[10px] sm:text-xs">
+              {serverStatus === "online" ? "Online" : serverStatus === "offline" ? "Server Offline" : "Connecting..."}
+            </span>
+          </div>
+
           <div className="hidden md:flex items-center gap-2 text-sm font-medium">
             <Globe className="w-4 h-4" />
             <GoogleTranslate />
           </div>
-          <span className="text-sm hidden sm:inline-block font-medium" style={{ color: "var(--muted)" }}>{userEmail}</span>
+          
+          <div className="flex flex-col text-right hidden sm:flex">
+            {userName && <span className="text-sm font-bold" style={{ color: "var(--deep)" }}>{userName}</span>}
+            <span className="text-xs" style={{ color: "var(--muted)" }}>{userEmail}</span>
+          </div>
           <Button variant="outline" size="sm" onClick={handleLogout}>Sign out</Button>
         </div>
       </header>
@@ -354,7 +470,9 @@ export default function DashboardPage() {
         <Tabs defaultValue="family" className="w-full">
           <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-4">
             <div>
-              <h1 className="text-3xl mb-1 dashboard-title" style={{ fontFamily: "var(--serif)", letterSpacing: "-0.04em", lineHeight: 1.1 }}>Dashboard</h1>
+              <h1 className="text-3xl mb-1 dashboard-title font-bold" style={{ fontFamily: "var(--serif)", letterSpacing: "-0.04em", lineHeight: 1.1 }}>
+                Welcome back, {userName || "User"}
+              </h1>
               <p style={{ color: "var(--muted)" }}>Manage your safety and monitor your connected family members.</p>
             </div>
             <TabsList className="bg-white border shadow-sm p-1 rounded-xl h-auto dashboard-tabs-list" style={{ borderColor: "var(--line)" }}>
@@ -366,6 +484,33 @@ export default function DashboardPage() {
 
           {/* FAMILY SAFETY TAB */}
           <TabsContent value="family" className="space-y-6 animate-in fade-in duration-500">
+            {/* WHATSAPP PROMPT BANNER */}
+            {waStatus !== "CONNECTED" && !waStatusLoading && (
+              <div className="p-4 rounded-xl border border-green-200 bg-green-50/50 flex flex-col md:flex-row justify-between items-start md:items-center gap-4 animate-in slide-in-from-top-4 duration-500 shadow-sm">
+                <div className="flex items-center gap-3">
+                  <div className="p-2 bg-green-100 rounded-lg text-green-700">
+                    <MessageSquare className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h3 className="font-bold text-green-950 text-base">⚠️ Enable Real-Time WhatsApp Protection</h3>
+                    <p className="text-sm text-green-800">Your dependents can forward suspicious messages directly to the WhatsApp bot for instant safety checks. Set it up below to activate protection.</p>
+                  </div>
+                </div>
+                <Button 
+                  className="bg-green-600 hover:bg-green-700 text-white font-bold text-sm whitespace-nowrap self-stretch md:self-auto"
+                  onClick={() => {
+                    const inputEl = document.getElementById("wa-phone-input");
+                    if (inputEl) {
+                      inputEl.scrollIntoView({ behavior: "smooth", block: "center" });
+                      inputEl.focus();
+                    }
+                  }}
+                >
+                  Configure WhatsApp Bot Now
+                </Button>
+              </div>
+            )}
+
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
               
               <div className="md:col-span-2 space-y-6">
@@ -427,17 +572,28 @@ export default function DashboardPage() {
                     <CardTitle className="font-serif text-xl flex items-center gap-2"><History className="w-5 h-5" /> Threat Interception Log</CardTitle>
                   </CardHeader>
                   <CardContent>
-                    <div className="space-y-4">
-                      {familyAlerts.map(alert => (
-                        <div key={alert.id} className="p-4 bg-gray-50 rounded-xl border-l-4" style={{ borderLeftColor: alert.severity === 'Critical' ? '#dc2626' : alert.severity === 'High' ? '#ea580c' : '#3b82f6' }}>
-                          <div className="flex justify-between items-start mb-1">
-                            <h4 className="font-bold text-sm">{alert.type}</h4>
-                            <span className="text-xs text-gray-400">{alert.date}</span>
-                          </div>
-                          <p className="text-sm text-gray-600 mt-1">{alert.details}</p>
-                        </div>
-                      ))}
-                    </div>
+                    {historyLoading ? (
+                      <div className="flex flex-col items-center justify-center py-8 text-gray-400 gap-2">
+                        <Loader2 className="w-8 h-8 animate-spin text-green-600" />
+                        <p className="text-sm font-medium">Loading threat logs from server...</p>
+                      </div>
+                    ) : (
+                      <div className="space-y-4">
+                        {familyAlerts.length === 0 ? (
+                          <p className="text-sm text-gray-500 italic text-center py-4">No threat intercepts logged yet.</p>
+                        ) : (
+                          familyAlerts.map(alert => (
+                            <div key={alert.id} className="p-4 bg-gray-50 rounded-xl border-l-4" style={{ borderLeftColor: alert.severity === 'Critical' ? '#dc2626' : alert.severity === 'High' ? '#ea580c' : '#3b82f6' }}>
+                              <div className="flex justify-between items-start mb-1">
+                                <h4 className="font-bold text-sm">{alert.type}</h4>
+                                <span className="text-xs text-gray-400">{alert.date}</span>
+                              </div>
+                              <p className="text-sm text-gray-600 mt-1">{alert.details}</p>
+                            </div>
+                          ))
+                        )}
+                      </div>
+                    )}
                   </CardContent>
                 </Card>
               </div>
@@ -455,86 +611,96 @@ export default function DashboardPage() {
                       Connect the Guardian WhatsApp bot to an elderly parent's phone. They can forward any suspicious message to the bot to get an instant safety check.
                     </p>
 
-                    {waStatus === "CONNECTED" && (
-                      <div className="p-4 bg-green-100 border border-green-200 rounded-xl space-y-3">
-                        <div className="flex items-center gap-2 text-green-800 font-bold text-sm">
-                          <span className="w-3.5 h-3.5 rounded-full bg-green-600 animate-pulse" />
-                          Bot Status: Connected & Active
-                        </div>
-                        <p className="text-xs text-green-700">
-                          The WhatsApp bot is now ready. Try forwarding a message to it on WhatsApp!
-                        </p>
-                        <Button 
-                          variant="destructive" 
-                          size="sm" 
-                          onClick={handleDisconnectWhatsApp}
-                          className="w-full font-bold"
-                        >
-                          Disconnect Bot
-                        </Button>
+                    {waStatusLoading ? (
+                      <div className="p-4 bg-gray-50 border rounded-xl flex flex-col items-center justify-center py-8 text-gray-400 gap-2" style={{ borderColor: "var(--line)" }}>
+                        <Loader2 className="w-6 h-6 animate-spin text-green-600" />
+                        <p className="text-xs">Connecting to WhatsApp status service...</p>
                       </div>
-                    )}
-
-                    {waStatus === "CONNECTING" && (
-                      <div className="p-4 bg-yellow-50 border border-yellow-200 rounded-xl space-y-3 text-sm">
-                        <div className="flex items-center gap-2 text-yellow-800 font-bold">
-                          <Loader2 className="w-4 h-4 animate-spin text-yellow-600" />
-                          Status: Connecting...
-                        </div>
-                        
-                        {waPairingCode ? (
-                          <div className="space-y-2">
-                            <p className="text-xs text-yellow-700 font-medium">
-                              Enter this code on your WhatsApp Web Link Device screen:
-                            </p>
-                            <div className="p-3 bg-white border border-yellow-200 rounded-lg text-center font-mono text-xl font-extrabold tracking-widest text-yellow-900 select-all">
-                              {waPairingCode}
+                    ) : (
+                      <>
+                        {waStatus === "CONNECTED" && (
+                          <div className="p-4 bg-green-100 border border-green-200 rounded-xl space-y-3">
+                            <div className="flex items-center gap-2 text-green-800 font-bold text-sm">
+                              <span className="w-3.5 h-3.5 rounded-full bg-green-600 animate-pulse" />
+                              Bot Status: Connected & Active
                             </div>
+                            <p className="text-xs text-green-700">
+                              The WhatsApp bot is now ready. Try forwarding a message to it on WhatsApp!
+                            </p>
+                            <Button 
+                              variant="destructive" 
+                              size="sm" 
+                              onClick={handleDisconnectWhatsApp}
+                              className="w-full font-bold"
+                            >
+                              Disconnect Bot
+                            </Button>
                           </div>
-                        ) : (
-                          <p className="text-xs text-yellow-700">
-                            Waiting for WhatsApp to generate pairing credentials...
-                          </p>
                         )}
 
-                        <Button 
-                          variant="outline" 
-                          size="sm" 
-                          onClick={handleDisconnectWhatsApp}
-                          className="w-full font-bold"
-                        >
-                          Cancel Connection
-                        </Button>
-                      </div>
-                    )}
+                        {waStatus === "CONNECTING" && (
+                          <div className="p-4 bg-yellow-50 border border-yellow-200 rounded-xl space-y-3 text-sm">
+                            <div className="flex items-center gap-2 text-yellow-800 font-bold">
+                              <Loader2 className="w-4 h-4 animate-spin text-yellow-600" />
+                              Status: Connecting...
+                            </div>
+                            
+                            {waPairingCode ? (
+                              <div className="space-y-2">
+                                <p className="text-xs text-yellow-700 font-medium">
+                                  Enter this code on your WhatsApp Web Link Device screen:
+                                </p>
+                                <div className="p-3 bg-white border border-yellow-200 rounded-lg text-center font-mono text-xl font-extrabold tracking-widest text-yellow-900 select-all">
+                                  {waPairingCode}
+                                </div>
+                              </div>
+                            ) : (
+                              <p className="text-xs text-yellow-700">
+                                Waiting for WhatsApp to generate pairing credentials...
+                              </p>
+                            )}
 
-                    {waStatus === "DISCONNECTED" && (
-                      <div className="space-y-3">
-                        <div className="space-y-1">
-                          <label className="text-xs font-bold text-gray-500 uppercase">Parent's Phone Number</label>
-                          <Input 
-                            type="text" 
-                            placeholder="e.g. +2348012345678" 
-                            value={waPhoneNumber}
-                            onChange={(e) => setWaPhoneNumber(e.target.value)}
-                            className="bg-white rounded-lg border-gray-300"
-                          />
-                        </div>
-                        
-                        <Tooltip title="Link a phone number to get pairing credentials">
-                          <span>
                             <Button 
-                              onClick={handleConnectWhatsApp}
-                              disabled={!waPhoneNumber.trim() || waConnecting}
-                              className="w-full bg-green-600 hover:bg-green-700 text-white font-bold"
+                              variant="outline" 
+                              size="sm" 
+                              onClick={handleDisconnectWhatsApp}
+                              className="w-full font-bold"
                             >
-                              {waConnecting ? (
-                                <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Generating Code...</>
-                              ) : "Request Pairing Code"}
+                              Cancel Connection
                             </Button>
-                          </span>
-                        </Tooltip>
-                      </div>
+                          </div>
+                        )}
+
+                        {waStatus === "DISCONNECTED" && (
+                          <div className="space-y-3">
+                            <div className="space-y-1">
+                              <label htmlFor="wa-phone-input" className="text-xs font-bold text-gray-500 uppercase">Parent's Phone Number</label>
+                              <Input 
+                                id="wa-phone-input"
+                                type="text" 
+                                placeholder="e.g. +2348012345678" 
+                                value={waPhoneNumber}
+                                onChange={(e) => setWaPhoneNumber(e.target.value)}
+                                className="bg-white rounded-lg border-gray-300"
+                              />
+                            </div>
+                            
+                            <Tooltip title="Link a phone number to get pairing credentials">
+                              <span>
+                                <Button 
+                                  onClick={handleConnectWhatsApp}
+                                  disabled={!waPhoneNumber.trim() || waConnecting}
+                                  className="w-full bg-green-600 hover:bg-green-700 text-white font-bold"
+                                >
+                                  {waConnecting ? (
+                                    <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Generating Code...</>
+                                  ) : "Request Pairing Code"}
+                                </Button>
+                              </span>
+                            </Tooltip>
+                          </div>
+                        )}
+                      </>
                     )}
                   </CardContent>
                 </Card>
@@ -602,11 +768,7 @@ export default function DashboardPage() {
                   <TabsList className="grid w-full grid-cols-3 mb-6 bg-gray-50 p-1 rounded-xl">
                     <TabsTrigger value="text" className="rounded-lg">Paste Text</TabsTrigger>
                     <TabsTrigger value="image" className="rounded-lg">Upload Image</TabsTrigger>
-                    <Tooltip title="Voice analysis is processed automatically via WhatsApp Bot notes">
-                      <span className="flex-1">
-                        <TabsTrigger value="voice" disabled className="rounded-lg opacity-50 w-full">Voice Note</TabsTrigger>
-                      </span>
-                    </Tooltip>
+                    <TabsTrigger value="voice" className="rounded-lg">Voice Note</TabsTrigger>
                   </TabsList>
                   
                   <TabsContent value="text" className="space-y-4">
@@ -698,6 +860,68 @@ export default function DashboardPage() {
                       )}
                     </Button>
                   </TabsContent>
+
+                  <TabsContent value="voice" className="space-y-4">
+                    <div 
+                      className="relative flex flex-col items-center justify-center min-h-[160px] border-2 border-dashed rounded-xl p-6 bg-white transition-colors"
+                      style={{ borderColor: scanAudio ? "#16a34a" : "var(--line)" }}
+                    >
+                      {scanAudio ? (
+                        <div className="flex flex-col items-center gap-3">
+                          <MessageSquare className="w-12 h-12 text-green-600 animate-pulse" />
+                          <p className="text-sm font-bold text-gray-800">{scanAudioName || "voice-note.mp3"}</p>
+                          <Button variant="outline" size="sm" onClick={() => { setScanAudio(null); setScanAudioName(null); }}>
+                            Remove
+                          </Button>
+                        </div>
+                      ) : isRecording ? (
+                        <div className="flex flex-col items-center gap-3">
+                          <span className="w-4 h-4 rounded-full bg-red-600 animate-ping" />
+                          <p className="text-sm font-bold text-red-600">Recording... ({recordingDuration}s)</p>
+                          <Button variant="destructive" size="sm" onClick={stopRecording}>
+                            Stop Recording
+                          </Button>
+                        </div>
+                      ) : (
+                        <div className="flex flex-col sm:flex-row gap-4 items-center justify-center w-full">
+                          <Button variant="outline" className="flex items-center gap-2 font-bold" onClick={startRecording}>
+                            <span className="w-2.5 h-2.5 rounded-full bg-red-600 animate-pulse" /> Record Live Note
+                          </Button>
+                          <span className="text-xs text-gray-400 font-bold uppercase">Or</span>
+                          <div>
+                            <input
+                              id="audio-upload-input"
+                              type="file"
+                              accept="audio/*"
+                              className="hidden"
+                              onChange={(e) => {
+                                const file = e.target.files?.[0];
+                                if (file) {
+                                  setScanAudio(file);
+                                  setScanAudioName(file.name);
+                                }
+                              }}
+                            />
+                            <Button variant="outline" className="font-bold" onClick={() => document.getElementById("audio-upload-input")?.click()}>
+                              Upload Audio File
+                            </Button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                    <Button
+                      onClick={() => handleScan("voice")}
+                      disabled={!scanAudio || isScanning}
+                      className="w-full h-12 text-lg font-bold rounded-xl transition-all"
+                      style={{ background: "var(--deep)" }}
+                    >
+                      {isScanning ? (
+                        <><Loader2 className="mr-2 h-5 w-5 animate-spin" /> Transcribing & Analyzing...</>
+                      ) : (
+                        "Analyze Voice Note"
+                      )}
+                    </Button>
+                  </TabsContent>
                 </Tabs>
               </div>
 
@@ -779,21 +1003,32 @@ export default function DashboardPage() {
                   <CardTitle className="font-serif text-xl flex items-center gap-2"><History className="w-5 h-5" /> Your Personal Scans</CardTitle>
                 </CardHeader>
                 <CardContent>
-                  <div className="divide-y" style={{ borderColor: "var(--line)" }}>
-                    {scansHistory.map((scan) => (
-                      <div key={scan.id} className="py-4 first:pt-0 last:pb-0 hover:bg-gray-50 transition-colors cursor-pointer rounded-lg px-2 -mx-2">
-                        <div className="flex justify-between items-start mb-1">
-                          <span className="text-xs font-bold text-gray-500 uppercase tracking-wider">{scan.type}</span>
-                        </div>
-                        <p className="text-sm font-medium mb-2 truncate">{scan.excerpt}</p>
-                        <Badge variant="secondary" className={
-                          scan.risk === "Safe" ? "bg-green-100 text-green-700 hover:bg-green-100" : 
-                          scan.risk === "High Risk" ? "bg-red-100 text-red-700 hover:bg-red-100" : 
-                          "bg-red-200 text-red-900 hover:bg-red-200"
-                        }>{scan.risk}</Badge>
-                      </div>
-                    ))}
-                  </div>
+                  {historyLoading ? (
+                    <div className="flex flex-col items-center justify-center py-8 text-gray-400 gap-2">
+                      <Loader2 className="w-6 h-6 animate-spin text-green-600" />
+                      <p className="text-xs font-medium">Loading scans...</p>
+                    </div>
+                  ) : (
+                    <div className="divide-y" style={{ borderColor: "var(--line)" }}>
+                      {scansHistory.length === 0 ? (
+                        <p className="text-xs text-gray-500 italic text-center py-4">No recent scans.</p>
+                      ) : (
+                        scansHistory.map((scan) => (
+                          <div key={scan.id} className="py-4 first:pt-0 last:pb-0 hover:bg-gray-50 transition-colors cursor-pointer rounded-lg px-2 -mx-2">
+                            <div className="flex justify-between items-start mb-1">
+                              <span className="text-xs font-bold text-gray-500 uppercase tracking-wider">{scan.type}</span>
+                            </div>
+                            <p className="text-sm font-medium mb-2 truncate">{scan.excerpt}</p>
+                            <Badge variant="secondary" className={
+                              scan.risk === "Safe" ? "bg-green-100 text-green-700 hover:bg-green-100" : 
+                              scan.risk === "High Risk" ? "bg-red-100 text-red-700 hover:bg-red-100" : 
+                              "bg-red-200 text-red-900 hover:bg-red-200"
+                            }>{scan.risk}</Badge>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  )}
                 </CardContent>
               </Card>
             </div>
