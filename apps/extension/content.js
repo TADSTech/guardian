@@ -7,6 +7,13 @@
   // Change this if the Guardian API isn't running on localhost.
   const GUARDIAN_API_BASE_URL = "http://localhost:5000";
 
+  // The Guardian web app itself marks its <html> element with this so the
+  // extension can tell it's on Guardian's own trusted UI, not a page that
+  // might contain a scam. Scanning it anyway serves no purpose and races
+  // with React hydration (the scan mutates the DOM with attributes the
+  // server-rendered HTML doesn't have), causing hydration-mismatch errors.
+  const isGuardianOwnApp = document.documentElement.hasAttribute("data-guardian-app");
+
   console.log("🛡️ Guardian Safety extension injected!");
 
   // 1. Inject Styles
@@ -172,6 +179,8 @@
 
   // 3. Phishing word scan
   function runPhishingScan() {
+    if (isGuardianOwnApp) return;
+
     const keywords = [
       "bvn", "otp", "password", "urgent transfer", "account suspended", 
       "claim your prize", "verify your account", "win 50,000", "send 1000"
@@ -186,7 +195,16 @@
           span.innerHTML = val.replace(regex, `<span class="guardian-highlight" title="Guardian Alert: Phishing term">$1</span>`);
           node.parentNode.replaceChild(span, node);
         }
-      } else if (node.nodeType === 1 && node.nodeName !== "SCRIPT" && node.nodeName !== "STYLE" && node.nodeName !== "TEXTAREA" && !node.getAttribute('data-guardian-scanned')) {
+      } else if (
+        node.nodeType === 1 &&
+        node.nodeName !== "SCRIPT" &&
+        node.nodeName !== "STYLE" &&
+        node.nodeName !== "TEXTAREA" &&
+        !node.hidden && // skip hidden elements: nothing to highlight, and mutating
+                        // framework-internal hidden nodes (e.g. Next.js's metadata
+                        // boundary) causes React hydration mismatches
+        !node.getAttribute('data-guardian-scanned')
+      ) {
         node.setAttribute('data-guardian-scanned', 'true');
         for (let i = 0; i < node.childNodes.length; i++) {
           walk(node.childNodes[i]);

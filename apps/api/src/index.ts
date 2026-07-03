@@ -303,53 +303,71 @@ fastify.post("/v1/webhooks/whatsapp", async (request, reply) => {
         if (dbService.hasProcessedWebhookMessage(msgId)) {
           continue;
         }
-        dbService.markWebhookMessageProcessed(msgId);
 
-        const senderPhone = msg.from;
-        const msgType = msg.type;
-        
-        let textContent = "";
-        let isImage = false;
-        let isVoice = false;
-        let voiceMediaId: string | undefined;
+        // Each message gets its own try/catch: one malformed or failing
+        // message shouldn't abort the rest of the batch or make Fastify
+        // return a 500 that causes Meta to retry-storm the whole webhook.
+        try {
+          const senderPhone = msg.from;
+          const msgType = msg.type;
 
-        if (msgType === "text") {
-          textContent = msg.text?.body || "";
-        } else if (msgType === "image") {
-          isImage = true;
-          textContent = msg.image?.caption || "";
-        } else if (msgType === "audio") {
-          isVoice = true;
-          voiceMediaId = msg.audio?.id;
-        }
+          let textContent = "";
+          let isImage = false;
+          let isVoice = false;
+          let isDocument = false;
+          let voiceMediaId: string | undefined;
 
-        let analysisResult;
-        if (isImage) {
-          const isPrescription = ["prescription", "doctor", "medical", "drug"].some(k => textContent.toLowerCase().includes(k));
-          analysisResult = await runAnalysis(
-            isPrescription ? "document" : "scam",
-            { text: textContent, fileName: "cloud_image.jpg" },
-            isPrescription ? "amoxicillin-prescription" : "bank-otp"
-          );
-        } else if (isVoice) {
-          const transcript = await transcribeCloudApiVoiceNote(voiceMediaId);
-          analysisResult = transcript
-            ? await runAnalysis("voice", { text: transcript })
-            : await runAnalysis("voice", { text: "Voice note" }, "voice-otp");
-        } else {
-          analysisResult = await runAnalysis("scam", { text: textContent });
-        }
+          if (msgType === "text") {
+            textContent = msg.text?.body || "";
+          } else if (msgType === "image") {
+            isImage = true;
+            textContent = msg.image?.caption || "";
+          } else if (msgType === "audio") {
+            isVoice = true;
+            voiceMediaId = msg.audio?.id;
+          } else if (msgType === "document") {
+            isDocument = true;
+            textContent = msg.document?.caption || msg.document?.filename || "";
+          }
 
-        const accessToken = process.env.WHATSAPP_ACCESS_TOKEN;
-        const phoneId = value.metadata?.phone_number_id;
-        
-        if (accessToken && phoneId) {
-          const riskEmoji = 
-            analysisResult.riskLevel === "high" ? "🚨 *HIGH RISK*" : 
-            analysisResult.riskLevel === "medium" ? "⚠️ *MEDIUM RISK*" : 
-            "✅ *SAFE / LOW RISK*";
+          let analysisResult;
+          if (isImage) {
+            const isPrescription = ["prescription", "doctor", "medical", "drug"].some(k => textContent.toLowerCase().includes(k));
+            analysisResult = await runAnalysis(
+              isPrescription ? "document" : "scam",
+              { text: textContent, fileName: "cloud_image.jpg" },
+              isPrescription ? "amoxicillin-prescription" : "bank-otp"
+            );
+          } else if (isVoice) {
+            const transcript = await transcribeCloudApiVoiceNote(voiceMediaId);
+            analysisResult = transcript
+              ? await runAnalysis("voice", { text: transcript })
+              : await runAnalysis("voice", { text: "Voice note" }, "voice-otp");
+          } else if (isDocument) {
+            const isPrescription = ["prescription", "doctor", "medical", "drug"].some(k => textContent.toLowerCase().includes(k));
+            analysisResult = await runAnalysis(
+              "document",
+              { text: textContent, fileName: msg.document?.filename || "cloud_document" },
+              isPrescription ? "amoxicillin-prescription" : undefined
+            );
+          } else if (textContent) {
+            analysisResult = await runAnalysis("scam", { text: textContent });
+          }
+          // Otherwise (reactions, statuses, unsupported types with no
+          // caption/text) there's nothing to analyze — skip silently rather
+          // than running "scam" analysis on an empty string.
 
-          const replyText = `🛡️ *GUARDIAN SAFETY ASSISTANT*
+          if (analysisResult) {
+            const accessToken = process.env.WHATSAPP_ACCESS_TOKEN;
+            const phoneId = value.metadata?.phone_number_id;
+
+            if (accessToken && phoneId) {
+              const riskEmoji =
+                analysisResult.riskLevel === "high" ? "🚨 *HIGH RISK*" :
+                analysisResult.riskLevel === "medium" ? "⚠️ *MEDIUM RISK*" :
+                "✅ *SAFE / LOW RISK*";
+
+              const replyText = `🛡️ *GUARDIAN SAFETY ASSISTANT*
 
 🔍 *Analysis Summary:*
 ${analysisResult.explanation}
@@ -364,22 +382,27 @@ ${analysisResult.actions.map((a, i) => `${i + 1}️⃣ ${a}`).join("\n")}
 
 ⚠️ _Disclaimer: ${analysisResult.disclaimer || "Guardian is an automated helper. Please verify critical details."}_`;
 
-          try {
-            await fetch(`https://graph.facebook.com/v17.0/${phoneId}/messages`, {
-              method: "POST",
-              headers: {
-                "Authorization": `Bearer ${accessToken}`,
-                "Content-Type": "application/json"
-              },
-              body: JSON.stringify({
-                messaging_product: "whatsapp",
-                to: senderPhone,
-                text: { body: replyText }
-              })
-            });
-          } catch (err) {
-            fastify.log.error(err, "Failed to send Cloud API response");
+              await fetch(`https://graph.facebook.com/v17.0/${phoneId}/messages`, {
+                method: "POST",
+                headers: {
+                  "Authorization": `Bearer ${accessToken}`,
+                  "Content-Type": "application/json"
+                },
+                body: JSON.stringify({
+                  messaging_product: "whatsapp",
+                  to: senderPhone,
+                  text: { body: replyText }
+                })
+              });
+            }
           }
+
+          // Only mark durably-processed once we've actually finished
+          // successfully — otherwise a transient failure here would
+          // permanently drop the message with no reply and no retry.
+          dbService.markWebhookMessageProcessed(msgId);
+        } catch (err) {
+          fastify.log.error(err, `Failed to process WhatsApp webhook message ${msgId}`);
         }
       }
     }

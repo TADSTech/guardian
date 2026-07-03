@@ -40,6 +40,10 @@ export class GuardianWhatsApp {
   // immediately start a brand-new connection.
   private manualDisconnect = false;
   private reconnectAttempts = 0;
+  // The number the bot was paired with — analysis results are delivered
+  // here (as a "message yourself" DM) instead of back into the sender's
+  // chat, so results land in one place regardless of who forwarded what.
+  private ownerPhoneNumber: string | undefined;
 
   constructor() {}
 
@@ -55,10 +59,24 @@ export class GuardianWhatsApp {
     return path.resolve(__dirname, "../../auth_info_guardian");
   }
 
+  /**
+   * The JID analysis results should be delivered to: the bot's own linked
+   * account (once registered, Baileys knows this JID directly), or a JID
+   * built from the phone number that was used to pair, before that.
+   */
+  private getOwnerJid(): string | null {
+    const registeredJid = this.sock?.authState?.creds?.me?.id;
+    if (registeredJid) return registeredJid;
+    if (this.ownerPhoneNumber) return `${this.ownerPhoneNumber.replace(/\D/g, "")}@s.whatsapp.net`;
+    return null;
+  }
+
   public async start(phoneNumber?: string): Promise<void> {
     if (this.connectionStatus === "CONNECTED" || this.connectionStatus === "CONNECTING") {
       return;
     }
+
+    if (phoneNumber) this.ownerPhoneNumber = phoneNumber;
 
     // A previous socket's event listeners would otherwise keep firing
     // (double-processing messages) alongside the new socket we're about to create.
@@ -233,15 +251,25 @@ export class GuardianWhatsApp {
             analysisResult = await runAnalysis("scam", { text });
           } else {
             // Unsupported content (stickers, contacts, locations, polls, etc.)
-            await this.sock.sendMessage(remoteJid, {
-              text: "🛡️ *Guardian Helper*\n\nSorry, I don't support this type of message yet. You can forward me suspicious texts, images, or voice notes.",
-            });
+            const ownerJid = this.getOwnerJid();
+            if (ownerJid) {
+              await this.sock.sendMessage(ownerJid, {
+                text: `🛡️ *Guardian Helper*\n\nReceived an unsupported message type from ${remoteJid}. You can forward suspicious texts, images, voice notes, or documents.`,
+              });
+            }
             continue;
           }
 
-          // Format and send response
-          const replyText = this.formatReply(analysisResult);
-          await this.sock.sendMessage(remoteJid, { text: replyText });
+          // Results are delivered to the bot owner's own chat (a "message
+          // yourself" DM), not back into whichever chat the content came
+          // from — so results land in one place no matter who sent what.
+          const ownerJid = this.getOwnerJid();
+          if (!ownerJid) {
+            console.warn("No owner JID known; cannot deliver analysis result. Was the bot paired with a phone number?");
+            continue;
+          }
+          const replyText = this.formatReply(analysisResult, remoteJid);
+          await this.sock.sendMessage(ownerJid, { text: replyText });
 
         } catch (err) {
           console.error("Error processing message", err);
@@ -272,16 +300,19 @@ export class GuardianWhatsApp {
     }
   }
 
-  private formatReply(result: AnalysisResult): string {
-    const riskEmoji = 
-      result.riskLevel === "high" ? "🚨 *HIGH RISK*" : 
-      result.riskLevel === "medium" ? "⚠️ *MEDIUM RISK*" : 
+  private formatReply(result: AnalysisResult, senderJid: string): string {
+    const riskEmoji =
+      result.riskLevel === "high" ? "🚨 *HIGH RISK*" :
+      result.riskLevel === "medium" ? "⚠️ *MEDIUM RISK*" :
       "✅ *SAFE / LOW RISK*";
 
     const evidenceLines = result.evidence.map(e => `• ${e}`).join("\n");
     const actionLines = result.actions.map((a, i) => `${i + 1}️⃣ ${a}`).join("\n");
+    const senderNumber = senderJid.split("@")[0];
 
     return `🛡️ *GUARDIAN SAFETY ASSISTANT*
+
+👤 *From:* ${senderNumber}
 
 🔍 *Analysis Summary:*
 ${result.explanation}
