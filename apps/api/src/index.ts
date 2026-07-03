@@ -6,6 +6,9 @@ import { runAnalysis, transcribeAudio } from "./analysis/engine";
 import { guardianWhatsApp } from "./whatsapp/connection";
 import { dbService } from "./database";
 import type { AnalysisRequest } from "@guardian/contracts";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+import fastifyStatic from "@fastify/static";
 
 // Requests larger than this are rejected outright. Sized to comfortably fit
 // a base64-encoded 5MB image (which inflates to ~6.7MB) plus JSON overhead.
@@ -409,6 +412,26 @@ ${analysisResult.actions.map((a, i) => `${i + 1}️⃣ ${a}`).join("\n")}
   }
 
   return { success: true };
+});
+
+// Serve static frontend files
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const webOutDir = path.resolve(__dirname, "../../../web/out");
+
+await fastify.register(fastifyStatic, {
+  root: webOutDir,
+  prefix: "/",
+  wildcard: false,
+});
+
+// SPA Routing Fallback: serve index.html for client-side routing
+fastify.setNotFoundHandler((request, reply) => {
+  const url = request.raw.url || "";
+  if (url.startsWith("/v1") || url.startsWith("/health")) {
+    return reply.status(404).send({ error: "Not found" });
+  }
+  return reply.sendFile("index.html");
 });
 
 // Start the server

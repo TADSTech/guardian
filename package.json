@@ -11,6 +11,7 @@
     "dev:api": "bun --cwd apps/api dev",
     "dev": "concurrently \"bun run dev:api\" \"bun run dev:web\"",
     "build": "bun --cwd apps/web build",
+    "start": "bun --cwd apps/api start",
     "lint": "bun --cwd apps/web lint"
   },
   "devDependencies": {
