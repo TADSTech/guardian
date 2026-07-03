@@ -16,12 +16,30 @@ import type { AnalysisResult } from "@guardian/contracts";
 
 const logger = pino({ level: "warn" });
 
+const BASE_RECONNECT_DELAY_MS = 5000;
+const MAX_RECONNECT_DELAY_MS = 60000;
+const MAX_RECONNECT_ATTEMPTS = 10;
+
+// Disconnect reasons where retrying with the existing session can't succeed
+// (session is gone, another device took over, or we're blocked) — these
+// need the user to explicitly reconnect from the dashboard, not a silent retry.
+const NO_RETRY_DISCONNECT_REASONS = new Set<number>([
+  DisconnectReason.forbidden,
+  DisconnectReason.multideviceMismatch,
+  DisconnectReason.connectionReplaced,
+]);
+
 export class GuardianWhatsApp {
   private sock: WASocket | null = null;
   private isConnected = false;
   private currentQr: string | null = null;
   private pairingCode: string | null = null;
   private connectionStatus: "CONNECTED" | "DISCONNECTED" | "CONNECTING" = "DISCONNECTED";
+  // Set right before a user-initiated logout() so the connection.update
+  // handler it triggers doesn't treat that as an unexpected disconnect and
+  // immediately start a brand-new connection.
+  private manualDisconnect = false;
+  private reconnectAttempts = 0;
 
   constructor() {}
 
@@ -42,6 +60,15 @@ export class GuardianWhatsApp {
       return;
     }
 
+    // A previous socket's event listeners would otherwise keep firing
+    // (double-processing messages) alongside the new socket we're about to create.
+    if (this.sock) {
+      this.sock.ev.removeAllListeners("connection.update");
+      this.sock.ev.removeAllListeners("creds.update");
+      this.sock.ev.removeAllListeners("messages.upsert");
+    }
+
+    this.manualDisconnect = false;
     this.connectionStatus = "CONNECTING";
     const authDir = this.getAuthDir();
     const { state, saveCreds } = await useMultiFileAuthState(authDir);
@@ -89,19 +116,46 @@ export class GuardianWhatsApp {
         const statusCode = (lastDisconnect?.error as Boom)?.output?.statusCode;
         console.log(`🔴 Guardian WhatsApp connection closed. Status Code: ${statusCode}`);
 
-        if (statusCode === DisconnectReason.loggedOut || statusCode === 401) {
-          console.log("Session logged out. Clearing auth folder...");
-          await this.clearSession();
-          this.start();
-        } else {
-          // Reconnect automatically for other reasons
-          setTimeout(() => this.start(phoneNumber), 5000);
+        // The user clicked "Disconnect" — sock.logout() itself triggers this
+        // same close event, so without this check we'd immediately start a
+        // brand-new connection right after the user asked to stop.
+        if (this.manualDisconnect) {
+          console.log("Disconnect was user-initiated; not reconnecting.");
+          return;
         }
+
+        if (statusCode === DisconnectReason.loggedOut || statusCode === DisconnectReason.badSession) {
+          console.log("Session invalid. Clearing auth folder — reconnecting needs a fresh pairing code from the dashboard.");
+          await this.clearSession();
+          return;
+        }
+
+        if (statusCode !== undefined && NO_RETRY_DISCONNECT_REASONS.has(statusCode)) {
+          console.log(`Disconnect reason ${statusCode} needs manual reconnection; not retrying automatically.`);
+          return;
+        }
+
+        if (statusCode === DisconnectReason.restartRequired) {
+          // Expected partway through Baileys' own pairing/auth handshake — reconnect immediately.
+          this.start(phoneNumber);
+          return;
+        }
+
+        if (this.reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
+          console.log(`Giving up after ${this.reconnectAttempts} reconnect attempts.`);
+          return;
+        }
+
+        this.reconnectAttempts += 1;
+        const delay = Math.min(BASE_RECONNECT_DELAY_MS * 2 ** (this.reconnectAttempts - 1), MAX_RECONNECT_DELAY_MS);
+        console.log(`Reconnecting in ${delay}ms (attempt ${this.reconnectAttempts}/${MAX_RECONNECT_ATTEMPTS})...`);
+        setTimeout(() => this.start(phoneNumber), delay);
       } else if (connection === "open") {
         this.isConnected = true;
         this.connectionStatus = "CONNECTED";
         this.currentQr = null;
         this.pairingCode = null;
+        this.reconnectAttempts = 0;
         console.log("🟢 Guardian WhatsApp connection established!");
       }
     });
@@ -112,17 +166,33 @@ export class GuardianWhatsApp {
       for (const msg of m.messages) {
         try {
           if (!msg.message || msg.key.fromMe) continue;
-          
+
           const remoteJid = msg.key.remoteJid;
           if (!remoteJid) continue;
 
+          // Guardian is for a sponsor <-> dependent 1:1 conversation. Without
+          // this, adding the bot's number to any group chat would make it
+          // analyze and reply to every message everyone in that group sends.
+          if (remoteJid.endsWith("@g.us") || remoteJid.endsWith("@broadcast")) continue;
+
+          // Reactions, read receipts, and other protocol-level updates arrive
+          // as "messages" too but aren't something a user sent to be analyzed
+          // — replying to them looks like the bot spamming for no reason.
+          const isNonContentUpdate = !!(
+            msg.message.reactionMessage ||
+            msg.message.protocolMessage ||
+            msg.message.senderKeyDistributionMessage ||
+            msg.message.pollUpdateMessage
+          );
+          if (isNonContentUpdate) continue;
+
           console.log(`📩 Received message from ${remoteJid}`);
-          
+
           // Get text content
-          const text = 
-            msg.message.conversation || 
-            msg.message.extendedTextMessage?.text || 
-            msg.message.imageMessage?.caption || 
+          const text =
+            msg.message.conversation ||
+            msg.message.extendedTextMessage?.text ||
+            msg.message.imageMessage?.caption ||
             msg.message.documentMessage?.caption;
 
           const isImage = !!msg.message.imageMessage;
@@ -136,7 +206,7 @@ export class GuardianWhatsApp {
             // For hackathon, if it has a prescription keyword in caption, treat as document, else scam
             const caption = msg.message.imageMessage?.caption || "";
             const isPrescription = ["prescription", "doctor", "medical", "drug", "medicine"].some(k => caption.toLowerCase().includes(k));
-            
+
             analysisResult = await runAnalysis(
               isPrescription ? "document" : "scam",
               { text: caption, fileName: "whatsapp_image.jpg" },
@@ -147,11 +217,24 @@ export class GuardianWhatsApp {
             analysisResult = transcript
               ? await runAnalysis("voice", { text: transcript })
               : await runAnalysis("voice", { text: "Voice message input" }, "voice-otp");
+          } else if (isDocument) {
+            // Forwarded documents (prescriptions, forms) are far more often
+            // real documents than scam screenshots, so default to "document"
+            // analysis rather than treating them like an image scam report.
+            const documentMessage = msg.message.documentMessage;
+            const caption = documentMessage?.caption || documentMessage?.fileName || "";
+            const isPrescription = ["prescription", "doctor", "medical", "drug", "medicine"].some(k => caption.toLowerCase().includes(k));
+
+            analysisResult = await runAnalysis(
+              "document",
+              { text: caption, fileName: documentMessage?.fileName || "whatsapp_document" },
+              isPrescription ? "amoxicillin-prescription" : undefined
+            );
           } else if (text) {
             // General text scan
             analysisResult = await runAnalysis("scam", { text });
           } else {
-            // Unsupported content
+            // Unsupported content (stickers, contacts, locations, polls, etc.)
             await this.sock.sendMessage(remoteJid, {
               text: "🛡️ *Guardian Helper*\n\nSorry, I don't support this type of message yet. You can forward me suspicious texts, images, or voice notes.",
             });
@@ -217,6 +300,7 @@ ${actionLines}
   }
 
   public async logout() {
+    this.manualDisconnect = true;
     try {
       if (this.sock) {
         await this.sock.logout();
@@ -232,6 +316,7 @@ ${actionLines}
     this.connectionStatus = "DISCONNECTED";
     this.currentQr = null;
     this.pairingCode = null;
+    this.reconnectAttempts = 0;
     try {
       const authDir = this.getAuthDir();
       await fs.rm(authDir, { recursive: true, force: true });
