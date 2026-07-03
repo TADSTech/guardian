@@ -227,7 +227,30 @@ You MUST format your output as a JSON object matching this schema:
     const resultText = response.output_text;
     if (!resultText) throw new Error("Empty response output_text from Groq responses API");
 
-    return JSON.parse(resultText) as AnalysisResult;
+    let parsed: any;
+    try {
+      parsed = JSON.parse(resultText);
+    } catch {
+      return {
+        kind,
+        riskLevel: "medium",
+        riskScore: 50,
+        explanation: resultText.slice(0, 300),
+        evidence: ["AI scan completed"],
+        actions: ["Verify message details carefully."],
+        disclaimer: "Guardian AI automated check."
+      };
+    }
+
+    return {
+      kind: parsed.kind || kind,
+      riskLevel: parsed.riskLevel || "medium",
+      riskScore: typeof parsed.riskScore === 'number' ? parsed.riskScore : 50,
+      explanation: parsed.explanation || "No explanation provided.",
+      evidence: Array.isArray(parsed.evidence) ? parsed.evidence : ["AI scan completed"],
+      actions: Array.isArray(parsed.actions) ? parsed.actions : ["Verify message details carefully."],
+      disclaimer: parsed.disclaimer || "Guardian helper check complete."
+    };
   } catch (err) {
     console.error("Groq responses API analysis failed, falling back to local heuristics", err);
     return analyzeLocalHeuristic(textToAnalyze, kind);
@@ -314,11 +337,11 @@ const SENSITIVE_NUMBER_PATTERN = /\d{4,}/g;
  * only protects what gets persisted.
  */
 function redactForStorage(result: AnalysisResult): AnalysisResult {
-  const redact = (text: string) => text.replace(SENSITIVE_NUMBER_PATTERN, "[redacted]");
+  const redact = (text: string) => (text ? text.replace(SENSITIVE_NUMBER_PATTERN, "[redacted]") : "");
   return {
     ...result,
-    explanation: redact(result.explanation),
-    evidence: result.evidence.map(redact),
+    explanation: result.explanation ? redact(result.explanation) : "",
+    evidence: result.evidence ? result.evidence.map(redact) : [],
   };
 }
 
