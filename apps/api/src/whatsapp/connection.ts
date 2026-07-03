@@ -82,32 +82,30 @@ export class GuardianWhatsApp {
         creds: state.creds,
         keys: makeCacheableSignalKeyStore(state.keys, logger),
       },
-      browser: ["Guardian Safety Bot", "Chrome", "1.0.0"],
+      browser: ["Ubuntu", "Chrome", "20.0.04"],
       connectTimeoutMs: 60000,
       keepAliveIntervalMs: 30000,
       shouldIgnoreJid: (jid) => jid === "status@broadcast" || jid?.endsWith("@broadcast"),
     });
-
-    // Request Pairing Code if phoneNumber is provided and not registered
-    if (phoneNumber && !this.sock.authState.creds.registered) {
-      setTimeout(async () => {
-        try {
-          const code = await this.sock!.requestPairingCode(phoneNumber.replace(/\D/g, ""));
-          this.pairingCode = code;
-          this.currentQr = null;
-          console.log(`🔑 Guardian WhatsApp Pairing Code: ${code}`);
-        } catch (err) {
-          console.error("Failed to request pairing code", err);
-        }
-      }, 3000);
-    }
 
     this.sock.ev.on("connection.update", async (update) => {
       const { connection, lastDisconnect, qr } = update;
 
       if (qr) {
         this.currentQr = qr;
-        this.pairingCode = null;
+        if (phoneNumber && this.sock && !this.sock.authState.creds.registered && !this.pairingCode) {
+          try {
+            console.log(`📡 Socket ready (QR received). Requesting pairing code for ${phoneNumber}...`);
+            const code = await this.sock.requestPairingCode(phoneNumber.replace(/\D/g, ""));
+            this.pairingCode = code;
+            this.currentQr = null;
+            console.log(`🔑 Guardian WhatsApp Pairing Code generated: ${code}`);
+          } catch (err) {
+            console.error("Failed to request pairing code inside connection.update", err);
+          }
+        } else if (!phoneNumber) {
+          this.pairingCode = null;
+        }
       }
 
       if (connection === "close") {

@@ -10,8 +10,8 @@
   "dependencies": {
     "@fastify/cors": "^10.0.0",
     "@fastify/rate-limit": "^11.1.0",
-    "@guardian/contracts": "file:../../packages/contracts",
-    "@guardian/demo-fixtures": "file:../../packages/demo-fixtures",
+    "@guardian/contracts": "workspace:*",
+    "@guardian/demo-fixtures": "workspace:*",
     "@hapi/boom": "^10.0.1",
     "@whiskeysockets/baileys": "^7.0.0-rc.9",
     "fastify": "^5.0.0",

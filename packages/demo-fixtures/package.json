@@ -5,6 +5,6 @@
   "types": "./src/index.ts",
   "exports": { ".": "./src/index.ts" },
   "dependencies": {
-    "@guardian/contracts": "file:../contracts"
+    "@guardian/contracts": "workspace:*"
   }
 }
