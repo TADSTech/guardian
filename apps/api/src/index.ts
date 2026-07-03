@@ -94,7 +94,8 @@ function isValidWhatsAppSignature(rawBody: Buffer, signatureHeader: string | und
  * base64-encoded images over MAX_IMAGE_BYTES, or plain text over
  * MAX_TEXT_LENGTH characters. Returns an error message, or null if valid.
  */
-function validateAnalysisInput(input: { text?: string; url?: string; fileName?: string }): string | null {
+function validateAnalysisInput(input: { text?: string; url?: string; fileName?: string } | undefined): string | null {
+  if (!input) return null;
   const text = input.text;
   if (!text) return null;
 
@@ -149,87 +150,107 @@ fastify.get("/health", async () => {
 
 // Analysis endpoints
 fastify.post("/v1/analyze/scam", async (request, reply) => {
-  const body = request.body as AnalysisRequest;
-  if (!body) {
-    return reply.status(400).send({ error: "Missing request body" });
+  try {
+    const body = request.body as any;
+    if (!body) {
+      return reply.status(400).send({ error: "Missing request body" });
+    }
+    const validationError = validateAnalysisInput(body.input);
+    if (validationError) {
+      return reply.status(413).send({ error: validationError });
+    }
+    const result = await runAnalysis("scam", body.input || {}, body.fixtureKey);
+    return result;
+  } catch (err: any) {
+    fastify.log.error(err, "Scam analysis endpoint error");
+    return reply.status(500).send({ error: err.message || "Internal Server Error" });
   }
-  const validationError = validateAnalysisInput(body.input);
-  if (validationError) {
-    return reply.status(413).send({ error: validationError });
-  }
-  const result = await runAnalysis("scam", body.input, body.fixtureKey);
-  return result;
 });
 
 fastify.post("/v1/analyze/document", async (request, reply) => {
-  const body = request.body as AnalysisRequest;
-  if (!body) {
-    return reply.status(400).send({ error: "Missing request body" });
+  try {
+    const body = request.body as any;
+    if (!body) {
+      return reply.status(400).send({ error: "Missing request body" });
+    }
+    const validationError = validateAnalysisInput(body.input);
+    if (validationError) {
+      return reply.status(413).send({ error: validationError });
+    }
+    const result = await runAnalysis("document", body.input || {}, body.fixtureKey);
+    return result;
+  } catch (err: any) {
+    fastify.log.error(err, "Document analysis endpoint error");
+    return reply.status(500).send({ error: err.message || "Internal Server Error" });
   }
-  const validationError = validateAnalysisInput(body.input);
-  if (validationError) {
-    return reply.status(413).send({ error: validationError });
-  }
-  const result = await runAnalysis("document", body.input, body.fixtureKey);
-  return result;
 });
 
 fastify.post("/v1/analyze/page", async (request, reply) => {
-  const body = request.body as AnalysisRequest;
-  if (!body) {
-    return reply.status(400).send({ error: "Missing request body" });
+  try {
+    const body = request.body as any;
+    if (!body) {
+      return reply.status(400).send({ error: "Missing request body" });
+    }
+    const validationError = validateAnalysisInput(body.input);
+    if (validationError) {
+      return reply.status(413).send({ error: validationError });
+    }
+    const result = await runAnalysis("page", body.input || {}, body.fixtureKey);
+    return result;
+  } catch (err: any) {
+    fastify.log.error(err, "Page analysis endpoint error");
+    return reply.status(500).send({ error: err.message || "Internal Server Error" });
   }
-  const validationError = validateAnalysisInput(body.input);
-  if (validationError) {
-    return reply.status(413).send({ error: validationError });
-  }
-  const result = await runAnalysis("page", body.input, body.fixtureKey);
-  return result;
 });
 
 fastify.post("/v1/analyze/voice", async (request, reply) => {
-  const body = request.body as any;
-  if (!body || !body.input) {
-    return reply.status(400).send({ error: "Missing request body" });
-  }
+  try {
+    const body = request.body as any;
+    if (!body || !body.input) {
+      return reply.status(400).send({ error: "Missing request body" });
+    }
 
-  let text = body.input.text || "";
-  let fixtureKey = body.fixtureKey;
+    let text = body.input.text || "";
+    let fixtureKey = body.fixtureKey;
 
-  if (body.input.audio && body.input.audio.startsWith("data:audio/")) {
-    try {
-      const match = body.input.audio.match(/^data:(audio\/[a-zA-Z0-9-+.]+);base64,(.*)$/);
-      if (match) {
-        const mimeType = match[1];
-        const base64Data = match[2];
-        const buffer = Buffer.from(base64Data, "base64");
-        
-        // Transcribe the audio using the engine's transcribeAudio
-        const transcript = await transcribeAudio(buffer, mimeType);
-        if (transcript) {
-          text = transcript;
-        } else {
-          // If transcription fails and no text is provided, use fixture
-          if (!text) {
-            fixtureKey = fixtureKey || "voice-otp";
+    if (body.input.audio && body.input.audio.startsWith("data:audio/")) {
+      try {
+        const match = body.input.audio.match(/^data:(audio\/[a-zA-Z0-9-+.]+);base64,(.*)$/);
+        if (match) {
+          const mimeType = match[1];
+          const base64Data = match[2];
+          const buffer = Buffer.from(base64Data, "base64");
+          
+          // Transcribe the audio using the engine's transcribeAudio
+          const transcript = await transcribeAudio(buffer, mimeType);
+          if (transcript) {
+            text = transcript;
+          } else {
+            // If transcription fails and no text is provided, use fixture
+            if (!text) {
+              fixtureKey = fixtureKey || "voice-otp";
+            }
           }
         }
-      }
-    } catch (err) {
-      fastify.log.error(err, "Failed to transcribe uploaded audio");
-      if (!text) {
-        fixtureKey = fixtureKey || "voice-otp";
+      } catch (err) {
+        fastify.log.error(err, "Failed to transcribe uploaded audio");
+        if (!text) {
+          fixtureKey = fixtureKey || "voice-otp";
+        }
       }
     }
-  }
 
-  const validationError = validateAnalysisInput({ ...body.input, text });
-  if (validationError) {
-    return reply.status(413).send({ error: validationError });
-  }
+    const validationError = validateAnalysisInput({ ...body.input, text });
+    if (validationError) {
+      return reply.status(413).send({ error: validationError });
+    }
 
-  const result = await runAnalysis("voice", { ...body.input, text }, fixtureKey);
-  return result;
+    const result = await runAnalysis("voice", { ...body.input, text }, fixtureKey);
+    return result;
+  } catch (err: any) {
+    fastify.log.error(err, "Voice analysis endpoint error");
+    return reply.status(500).send({ error: err.message || "Internal Server Error" });
+  }
 });
 
 // Fetch recent analysis logs from SQLite
